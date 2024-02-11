@@ -1,5 +1,6 @@
 pub mod parser;
+pub mod eval;
 
 fn main() {
-    println!("Hello, world!");
+    crate::eval::repl();
 }

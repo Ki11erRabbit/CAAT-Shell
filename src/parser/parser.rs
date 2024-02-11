@@ -1,6 +1,6 @@
 use chumsky::prelude::*;
 
-use super::{Command, Expression, Literal, Pipeline};
+use super::{Command, Expression, Literal, Operator, Pipeline};
 
 
 
@@ -78,7 +78,7 @@ fn string_parser_unescaped() -> impl Parser<char, Literal, Error = Simple<char>>
 }
 
 fn string_parser_unescaped_as_str() -> impl Parser<char, String, Error = Simple<char>> {
-    let string = none_of("\"\\:")
+    let string = none_of("\"\\: ")
         .repeated()
         .map(|s| s.iter().collect());
     string
@@ -115,31 +115,53 @@ fn literal_parser() -> impl Parser<char, Literal, Error = Simple<char>> {
 }
 
 
-fn command_parser() -> impl Parser<char, Command, Error = Simple<char>> {
+/*fn command_parser() -> impl Parser<char, Command, Error = Simple<char>> {
     let name = string_parser_unescaped_as_str();
     let arguments = literal_parser().repeated().padded();
     name.then(arguments).map(|(name, arguments)| Command { name, arguments })
 }
 
 fn pipeline_parser() -> impl Parser<char, Pipeline, Error = Simple<char>> {
-    let command = command_parser();
     let operator = choice((
-        text::keyword("|").map(|_| super::Operator::Pipe),
-        text::keyword("&&").map(|_| super::Operator::And),
-        text::keyword("||").map(|_| super::Operator::Or),
-        text::keyword(";").map(|_| super::Operator::Then),
+        just("|").map(|_| super::Operator::Pipe),
+        just("&&").map(|_| super::Operator::And),
+        just("||").map(|_| super::Operator::Or),
+        just(";").map(|_| super::Operator::Then),
     ));
-    recursive(|pipeline| choice ((
-                command_parser().map(|command| Pipeline { commands: vec![command], operators: vec![] }),
-                command_parser().then(operator).then(pipeline).map(|((command, operator), pipeline)| Pipeline { commands: vec![command], operators: vec![operator], ..pipeline }),
-                ))).map(|pipeline| pipeline)
-}
+    recursive(|pipeline| {
+        choice((
+                command_parser().then(operator.padded()).then(pipeline).map(|((command, operator), next)| Pipeline { command, operator: Some(operator), next: Some(Box::new(next)) }),
+                command_parser().map(|command| Pipeline { command, operator: None, next: None }),
+                ))
+    })
+}*/
 
 fn expression_parser() -> impl Parser<char, Expression, Error = Simple<char>> {
-    choice((
-            literal_parser().map(Expression::Literal),
-            pipeline_parser().map(Expression::Pipeline),
+    let operator = choice((
+        just("|").map(|_| super::Operator::Pipe),
+        just("&&").map(|_| super::Operator::And),
+        just("||").map(|_| super::Operator::Or),
+        just(";").map(|_| super::Operator::Then),
+    ));
+
+    recursive(|expression| {
+        let parenthesized = just('(').padded().ignore_then(expression.clone()).then_ignore(just(')').padded()).map(|arg| Expression::Parenthesized(Box::new(arg)));
+        let variable = just('$').ignore_then(string_parser_unescaped_as_str()).map(|arg| Expression::Variable(arg));
+        let literal = literal_parser().map(Expression::Literal);
+        let command = string_parser_unescaped_as_str().padded().then(expression.repeated().padded()).map(|(name, arguments)| Command { name, arguments });
+        let pipeline = recursive(|pipeline| {
+            choice((
+                command.clone().then(operator.padded()).then(pipeline.padded()).map(|((command, operator), next)| Pipeline { command, operator: Some(operator), next: Some(Box::new(next)) }),
+                command.map(|command| Pipeline { command, operator: None, next: None }),
+                              ))
+        }).map(Expression::Pipeline);
+        choice((
+            parenthesized,
+            pipeline,
+            variable,
+            literal,
             ))
+    })
 }
 
 fn assignment_parser() -> impl Parser<char, super::Assignment, Error = Simple<char>> {
@@ -161,7 +183,7 @@ fn file_parser() -> impl Parser<char, super::File, Error = Simple<char>> {
 }
 
 fn interactive_parser() -> impl Parser<char, super::Interactive, Error = Simple<char>> {
-    statement_parser().map(|statement| super::Interactive { statement })
+    statement_parser().map(|statement| super::Interactive { statement, gave_statement: false})
 }
 
 
