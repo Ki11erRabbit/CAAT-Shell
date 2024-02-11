@@ -148,11 +148,23 @@ fn expression_parser() -> impl Parser<char, Expression, Error = Simple<char>> {
         let parenthesized = just('(').padded().ignore_then(expression.clone()).then_ignore(just(')').padded()).map(|arg| Expression::Parenthesized(Box::new(arg)));
         let variable = just('$').ignore_then(string_parser_unescaped_as_str()).map(|arg| Expression::Variable(arg));
         let literal = literal_parser().map(Expression::Literal);
-        let command = string_parser_unescaped_as_str().padded().then(expression.repeated().padded()).map(|(name, arguments)| Command { name, arguments });
+        let command = string_parser_unescaped_as_str().padded().then(choice((
+                    parenthesized.clone(),
+                    just('$').ignore_then(string_parser_unescaped_as_str()).map(|arg| Expression::Variable(arg)),
+                    literal_parser().map(Expression::Literal),
+                    )).repeated()).map(|(name, arguments)| Command { name, arguments });
         let pipeline = recursive(|pipeline| {
             choice((
-                command.clone().then(operator.padded()).then(pipeline.padded()).map(|((command, operator), next)| Pipeline { command, operator: Some(operator), next: Some(Box::new(next)) }),
-                command.map(|command| Pipeline { command, operator: None, next: None }),
+                string_parser_unescaped_as_str().padded().then(choice((
+                    parenthesized.clone(),
+                    just('$').ignore_then(string_parser_unescaped_as_str()).map(|arg| Expression::Variable(arg)),
+                    literal_parser().map(Expression::Literal),
+                    )).repeated()).map(|(name, arguments)| Command { name, arguments }).then(operator.padded()).then(pipeline.padded()).map(|((command, operator), next)| Pipeline { command, operator: Some(operator), next: Some(Box::new(next)) }),
+                string_parser_unescaped_as_str().padded().then(choice((
+                    parenthesized.clone(),
+                    just('$').ignore_then(string_parser_unescaped_as_str()).map(|arg| Expression::Variable(arg)),
+                    literal_parser().map(Expression::Literal),
+                    )).repeated()).map(|(name, arguments)| Command { name, arguments }).map(|command| Pipeline { command, operator: None, next: None }),
                               ))
         }).map(Expression::Pipeline);
         choice((
