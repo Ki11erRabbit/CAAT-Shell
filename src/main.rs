@@ -1,6 +1,10 @@
+use shell::Shell;
+
 pub mod parser;
 pub mod eval;
+pub mod shell;
 
 fn main() {
-    crate::eval::repl();
+    let mut shell = Shell::new();
+    crate::eval::repl(&mut shell);
 }

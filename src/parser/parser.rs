@@ -156,22 +156,22 @@ fn expression_parser() -> impl Parser<char, Expression, Error = Simple<char>> {
         let pipeline = recursive(|pipeline| {
             choice((
                 string_parser_unescaped_as_str().padded().then(choice((
-                    parenthesized.clone(),
-                    just('$').ignore_then(string_parser_unescaped_as_str()).map(|arg| Expression::Variable(arg)),
                     literal_parser().map(Expression::Literal),
+                    just('$').ignore_then(string_parser_unescaped_as_str()).map(|arg| Expression::Variable(arg)),
+                    parenthesized.clone(),
                     )).repeated()).map(|(name, arguments)| Command { name, arguments }).then(operator.padded()).then(pipeline.padded()).map(|((command, operator), next)| Pipeline { command, operator: Some(operator), next: Some(Box::new(next)) }),
                 string_parser_unescaped_as_str().padded().then(choice((
-                    parenthesized.clone(),
-                    just('$').ignore_then(string_parser_unescaped_as_str()).map(|arg| Expression::Variable(arg)),
                     literal_parser().map(Expression::Literal),
+                    just('$').ignore_then(string_parser_unescaped_as_str()).map(|arg| Expression::Variable(arg)),
+                    parenthesized.clone(),
                     )).repeated()).map(|(name, arguments)| Command { name, arguments }).map(|command| Pipeline { command, operator: None, next: None }),
                               ))
         }).map(Expression::Pipeline);
         choice((
+            literal,
             parenthesized,
             pipeline,
             variable,
-            literal,
             ))
     })
 }
