@@ -78,12 +78,18 @@ fn string_parser_unescaped() -> impl Parser<char, Literal, Error = Simple<char>>
 }
 
 fn string_parser_unescaped_as_str() -> impl Parser<char, String, Error = Simple<char>> {
-    let string = none_of("\"\\: ")
+    let string = none_of("\"\\:")
         .repeated()
         .map(|s| s.iter().collect());
     string
 }
 
+fn command_name_parser() -> impl Parser<char, String, Error = Simple<char>> {
+    let string = none_of("\"\\:")
+        .repeated()
+        .map(|s| s.iter().collect());
+    string
+}
 
 fn boolean_parser() -> impl Parser<char, Literal, Error = Simple<char>> {
     choice((
@@ -136,42 +142,46 @@ fn pipeline_parser() -> impl Parser<char, Pipeline, Error = Simple<char>> {
     })
 }*/
 
+fn variable_parser() -> impl Parser<char, Expression, Error = Simple<char>> {
+    just('$').ignore_then(string_parser_unescaped_as_str()).map(|arg| Expression::Variable(arg))
+}
+
 fn expression_parser() -> impl Parser<char, Expression, Error = Simple<char>> {
-    let operator = choice((
+    /*let operator = choice((
         just("|").map(|_| super::Operator::Pipe),
         just("&&").map(|_| super::Operator::And),
         just("||").map(|_| super::Operator::Or),
         just(";").map(|_| super::Operator::Then),
-    ));
+    ));*/
 
     recursive(|expression| {
         let parenthesized = just('(').padded().ignore_then(expression.clone()).then_ignore(just(')').padded()).map(|arg| Expression::Parenthesized(Box::new(arg)));
-        let variable = just('$').ignore_then(string_parser_unescaped_as_str()).map(|arg| Expression::Variable(arg));
         let literal = literal_parser().map(Expression::Literal);
-        let command = string_parser_unescaped_as_str().padded().then(choice((
-                    parenthesized.clone(),
-                    just('$').ignore_then(string_parser_unescaped_as_str()).map(|arg| Expression::Variable(arg)),
-                    literal_parser().map(Expression::Literal),
-                    )).repeated()).map(|(name, arguments)| Command { name, arguments });
-        let pipeline = recursive(|pipeline| {
+        let argument = choice((
+                    parenthesized.clone().padded(),
+                    variable_parser().padded(),//just('$').ignore_then(string_parser_unescaped_as_str()).map(|arg| Expression::Variable(arg)),
+                    literal_parser().padded().map(Expression::Literal),
+                    ));
+        let argument_list = argument.separated_by(just(' ').padded()).labelled("argument list");
+
+        let command = command_name_parser().padded().then(argument_list).map(|(name, arguments)| { eprintln!("{:?}", arguments); Command { name, arguments }});
+        /*let pipeline = recursive(|pipeline| {
             choice((
-                string_parser_unescaped_as_str().padded().then(choice((
-                    literal_parser().map(Expression::Literal),
-                    just('$').ignore_then(string_parser_unescaped_as_str()).map(|arg| Expression::Variable(arg)),
-                    parenthesized.clone(),
-                    )).repeated()).map(|(name, arguments)| Command { name, arguments }).then(operator.padded()).then(pipeline.padded()).map(|((command, operator), next)| Pipeline { command, operator: Some(operator), next: Some(Box::new(next)) }),
-                string_parser_unescaped_as_str().padded().then(choice((
-                    literal_parser().map(Expression::Literal),
-                    just('$').ignore_then(string_parser_unescaped_as_str()).map(|arg| Expression::Variable(arg)),
-                    parenthesized.clone(),
-                    )).repeated()).map(|(name, arguments)| Command { name, arguments }).map(|command| Pipeline { command, operator: None, next: None }),
+                command_name_parser()
+                    .padded()
+                    .then(argument.repeated())
+                    .map(|(name, arguments)| Command { name, arguments })
+                    .then(operator.padded())
+                    .then(pipeline.padded())
+                    .map(|((command, operator), next)| Pipeline { command, operator: Some(operator), next: Some(Box::new(next)) }),
                               ))
-        }).map(Expression::Pipeline);
+        }).map(Expression::Pipeline);*/
         choice((
             literal,
-            parenthesized,
-            pipeline,
-            variable,
+            //parenthesized,
+            //pipeline,
+            variable_parser(),
+            command.map(|cmd| Expression::Pipeline(Pipeline { command: cmd, operator: None, next: None })),
             ))
     })
 }
@@ -252,6 +262,13 @@ mod tests {
     fn test_parse_map() {
         assert_eq!(parse("{}"), Ok(Literal::Map(vec![])));
         assert_eq!(parse("{a: 1, b: 2}"), Ok(Literal::Map(vec![("a".to_string(), Literal::Integer(1)), ("b".to_string(), Literal::Integer(2))])));
+    }
+    
+    #[test]
+    fn test_command_name_parser() {
+        let input = "python python/test.py \"hello\" \"hello\"";
+        expression_parser().parse(input).unwrap();
+        panic!();
     }
 }
 
