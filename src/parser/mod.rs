@@ -66,10 +66,10 @@ impl Expression {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub enum Literal {
     Integer(i64),
-    Float(f64),
+    Float(String),
     String(String),
     Boolean(bool),
     List(Vec<Literal>),
@@ -81,7 +81,7 @@ impl Literal {
     pub fn as_value(&self) -> Value {
         match self {
             Literal::Integer(i) => Value::Integer(*i),
-            Literal::Float(f) => Value::Float(*f),
+            Literal::Float(f) => Value::Float(f.parse().unwrap()),
             Literal::String(s) => Value::String(s.clone()),
             Literal::Boolean(b) => Value::Boolean(*b),
             Literal::List(l) => Value::List(l.iter().map(|l| l.as_value()).collect()),
@@ -111,7 +111,7 @@ impl Command {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub enum Operator {
     Pipe,
     And,
