@@ -3,6 +3,7 @@ use shell::Shell;
 pub mod parser;
 pub mod eval;
 pub mod shell;
+pub mod builtins;
 
 fn main() {
     let mut shell = Shell::new();

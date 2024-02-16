@@ -8,3 +8,6 @@ edition = "2021"
 [dependencies]
 caat_rust = { git = "https://github.com/Ki11erRabbit/caat_rust.git" }
 chumsky = "0.9.3"
+peg = "0.8.2"
+
+

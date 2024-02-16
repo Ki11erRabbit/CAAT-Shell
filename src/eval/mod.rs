@@ -15,8 +15,8 @@ pub fn repl(shell: &mut Shell) {
         std::io::stdin().read_line(&mut input).unwrap();
         input = input.trim().to_string();
 
-        //let mut interactive = crate::parser::parse_interactive(&input).unwrap();
-        //eval(shell, &mut interactive);
+        let mut interactive = crate::parser::parse_interactive(&input).unwrap();
+        eval(shell, &mut interactive);
     }
 }
 
@@ -34,7 +34,7 @@ fn eval(shell: &mut Shell, input: &mut dyn Iterator<Item = Statement>) {
         Some(Statement::Expression(expression)) => {
             //println!("Expression: {:?}", expression);
             let value = eval_expression(shell, expression);
-            println!("Value: {:?}", value);
+            println!("Value: {}", value);
         }
         None => {}
     }
@@ -65,11 +65,17 @@ fn eval_expression(shell: &mut Shell, expression: Expression) -> Value {
 
 fn eval_pipeline(shell: &mut Shell, mut pipeline: Box<Pipeline>) -> Value {
 
-    println!("Command: {:?}", pipeline);
+    //println!("Command: {:?}", pipeline);
     let command = &pipeline.command;
 
-    let ff = caat_rust::ForeignFunction::new(&command.name);
-    println!("{:?}", command.arguments_as_value(shell.environment()));
-    let return_value = ff.call(&command.arguments_as_value(shell.environment()));
-    return_value
+    match crate::builtins::run_builtin(shell, command) {
+        Ok(value) => value,
+        Err(()) => {
+            let ff = caat_rust::ForeignFunction::new(&command.name);
+            //println!("{:?}", command.arguments_as_value(shell.environment()));
+            let return_value = ff.call(&command.arguments_as_value(shell.environment()));
+            return_value
+        }
+    }
+
 }

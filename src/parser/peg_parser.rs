@@ -1,5 +1,5 @@
 
-use crate::parser::{Literal, Expression};
+use crate::parser::{Literal, Expression, Command, Pipeline, Operator, Statement, Assignment, Interactive, File};
 
 #[derive(Debug, PartialEq)]
 pub enum Token {
@@ -31,8 +31,8 @@ peg::parser!{
         pub rule identifier() -> Token
             = match_str:$(['a'..='z'|'A'..='Z'|'_']['a'..='z'|'A'..='Z'|'_'|'0'..='9']*) {?
                 match match_str {
-                    "true" => Ok(Token::Bool(true)),
-                    "false" => Ok(Token::Bool(false)),
+                    "true" => Err("boolean not identifier"),
+                    "false" => Err("boolean not identifier"),
                     _ => Ok(Token::Identifier(match_str.to_string())),
                 }
             }
@@ -71,13 +71,13 @@ peg::parser!{
         rule dollar() -> Token
             = quiet!{"$"} {Token::Dollar}
         rule list() -> Literal
-            = bracket_open() l:literal() ** comma() bracket_close() {Literal::List(l)}
+            = bracket_open() [' '|'\t']* l:literal() ** (comma() [' '|'\t']*) bracket_close() {Literal::List(l)}
         rule pair() -> Vec<(String, Literal)>
-            = p:pair_item() ** comma() {p}
+            = p:pair_item() ** (comma() [' '|'\t']*) {p}
         rule pair_item() -> (String, Literal)
-            = ['"'] k:$([^ '"']+) ['"'] colon() v:literal() { (k.to_string(), v) }
+            = ['"'] k:$([^ '"']+) ['"'] ([' '|'\t']* colon() [' '|'\t']*) v:literal() { (k.to_string(), v) }
         rule map() -> Literal
-            = brace_open() m:pair() brace_close() {Literal::Map(m)}
+            = brace_open() [' '|'\t']* m:pair() brace_close() {Literal::Map(m)}
         rule base_literal() -> Literal 
             = token:(float() / integer() / string() / bool()) {
                 match token {
@@ -101,10 +101,57 @@ peg::parser!{
         rule paren_expression() -> Expression
             = paren_open() e:expression() paren_close() {Expression::Parenthesized(Box::new(e))}
         pub rule expression() -> Expression
-            = e:(variable_expression() / literal_expression() / paren_expression()) {e}
+            = e:(variable_expression() / literal_expression() / paren_expression() / pipeline_expression()) {e}
+        pub rule command() -> Command
+            = name:identifier() [' '|'\t']* args:expression() ** ([' '|'\t']+) {
+                if let Token::Identifier(name) = name {
+                    Command{name: name, arguments: args}
+                } else {
+                    unimplemented!()
+                }
+            }
+        rule operator() -> Operator
+            = op:(pipe() / and() / or() / then()) {
+                match op {
+                    Token::Pipe => Operator::Pipe,
+                    Token::And => Operator::And,
+                    Token::Or => Operator::Or,
+                    Token::Then => Operator::Then,
+                    _ => unimplemented!(),
+                }
+                            
+            }
+        pub rule pipeline() -> Pipeline
+            = c:command() [' '|'\t']* o:operator() [' '|'\t']* n:pipeline() {
+            Pipeline{command: c, operator: Some(o), next: Some(Box::new(n))}
+            }
+            / c:command() {Pipeline{command: c, operator: None, next: None}}
+        rule pipeline_expression() -> Expression
+            = p:pipeline() {Expression::Pipeline(p)}
+        rule expression_statement() -> Statement
+            = e:expression() {Statement::Expression(e)} 
+        rule assignment() -> Assignment
+            = id:identifier() [' '|'\t']* ['='] [' '|'\t']* e:expression() {
+                if let Token::Identifier(s) = id {
+                    Assignment{target: s, value: e}
+                } else {
+                    unimplemented!()
+                }
+            }
+        rule assignment_statement() -> Statement
+            = a:assignment() {Statement::Assignment(a)}
+        rule statement() -> Statement
+            = s:(expression_statement() / assignment_statement()) {s}
+        pub rule interactive() -> Interactive
+            = s:statement() {Interactive { statement: Some(s) }}
+        pub rule file() -> File
+            = s:statement() ** (['\r']?['\n']+) {File { statements: s }}
     }
     
 }
+
+pub use parser::file as parse_file;
+pub use parser::interactive as parse_interactive;
 
 
 #[cfg(test)]
@@ -114,8 +161,6 @@ mod tests {
     #[test]
     fn test_identifier() {
         assert_eq!(parser::identifier("foo"), Ok(Token::Identifier("foo".to_string())));
-        assert_eq!(parser::identifier("true"), Ok(Token::Bool(true)));
-        assert_eq!(parser::identifier("false"), Ok(Token::Bool(false)));
     }
     
     #[test]
@@ -147,6 +192,17 @@ mod tests {
         assert_eq!(parser::expression("[1, 2, 3]"), Ok(Expression::Literal(Literal::List(vec![Literal::Integer(1), Literal::Integer(2), Literal::Integer(3)]))));
         assert_eq!(parser::expression(r#"{"foo": "bar"}"#), Ok(Expression::Literal(Literal::Map(vec![("foo".to_string(), Literal::String("bar".to_string()))]))));
         assert_eq!(parser::expression(r#"(42)"#), Ok(Expression::Parenthesized(Box::new(Expression::Literal(Literal::Integer(42))))));
+    }
+    
+    #[test]
+    fn test_command() {
+        assert_eq!(parser::command("foo 42"), Ok(Command{name: "foo".to_string(), arguments: vec![Expression::Literal(Literal::Integer(42))]}));
+    }
+    
+    #[test]
+    fn test_pipeline() {
+        assert_eq!(parser::pipeline("foo 42 | bar 43"), Ok(Pipeline{command: Command{name: "foo".to_string(), arguments: vec![Expression::Literal(Literal::Integer(42))]}, operator: Some(Operator::Pipe), next: Some(Box::new(Pipeline{command: Command{name: "bar".to_string(), arguments: vec![Expression::Literal(Literal::Integer(43))]}, operator: None, next: None}))}));
+        assert_eq!(parser::pipeline("foo true false"), Ok(Pipeline{command: Command{name: "foo".to_string(), arguments: vec![Expression::Literal(Literal::Boolean(true)), Expression::Literal(Literal::Boolean(false))]}, operator: None, next: None}));
     }
 
 }

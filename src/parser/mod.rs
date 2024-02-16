@@ -4,7 +4,7 @@
 mod peg_parser;
 
 use caat_rust::Value;
-//pub use parser::{parse_file, parse_interactive};
+pub use peg_parser::{parse_file, parse_interactive};
 
 use crate::shell::Environment;
 
@@ -20,19 +20,13 @@ impl Iterator for File {
 }
 
 pub struct Interactive {
-    pub statement: Statement,
-    gave_statement: bool,
+    pub statement: Option<Statement>,
 }
 
 impl Iterator for Interactive {
     type Item = Statement;
     fn next(&mut self) -> Option<Self::Item> {
-        if self.gave_statement {
-            None
-        } else {
-            self.gave_statement = true;
-            Some(self.statement.clone())
-        }
+        return self.statement.take();
     }
 }
 
