@@ -1,9 +1,10 @@
 
-mod parser;
+//mod parser;
 
+mod peg_parser;
 
 use caat_rust::Value;
-pub use parser::{parse_file, parse_interactive};
+//pub use parser::{parse_file, parse_interactive};
 
 use crate::shell::Environment;
 
@@ -66,10 +67,10 @@ impl Expression {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Literal {
     Integer(i64),
-    Float(String),
+    Float(f64),
     String(String),
     Boolean(bool),
     List(Vec<Literal>),
@@ -81,7 +82,7 @@ impl Literal {
     pub fn as_value(&self) -> Value {
         match self {
             Literal::Integer(i) => Value::Integer(*i),
-            Literal::Float(f) => Value::Float(f.parse().unwrap()),
+            Literal::Float(f) => Value::Float(*f),
             Literal::String(s) => Value::String(s.clone()),
             Literal::Boolean(b) => Value::Boolean(*b),
             Literal::List(l) => Value::List(l.iter().map(|l| l.as_value()).collect()),
@@ -118,3 +119,5 @@ pub enum Operator {
     Or,
     Then,
 }
+
+

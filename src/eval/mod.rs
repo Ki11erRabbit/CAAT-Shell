@@ -15,8 +15,8 @@ pub fn repl(shell: &mut Shell) {
         std::io::stdin().read_line(&mut input).unwrap();
         input = input.trim().to_string();
 
-        let mut interactive = crate::parser::parse_interactive(&input).unwrap();
-        eval(shell, &mut interactive);
+        //let mut interactive = crate::parser::parse_interactive(&input).unwrap();
+        //eval(shell, &mut interactive);
     }
 }
 
