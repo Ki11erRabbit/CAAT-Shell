@@ -6,11 +6,11 @@ use std::env;
 
 
 
-pub fn cd(args: Vec<Value>) -> Value {
+pub fn cd(args: Vec<Value>) -> Result<Value, String> {
     if args.len() == 0 {
         match env::var("HOME") {
             Ok(home) => {
-                let _ = env::set_current_dir(home);
+                let _ = env::set_current_dir(home).map_err(|e| e.to_string())?;
             }
             Err(_) => {
                 println!("HOME not set");
@@ -19,12 +19,12 @@ pub fn cd(args: Vec<Value>) -> Value {
     } else {
         match args[0] {
             Value::String(ref path) => {
-                let _ = env::set_current_dir(path);
+                let _ = env::set_current_dir(path).map_err(|e| e.to_string())?;
             }
             _ => {
                 println!("cd: expected string");
             }
         }
     }
-    return Value::Null
+    return Ok(Value::Null)
 }
