@@ -15,38 +15,48 @@ pub fn repl(shell: &mut Shell) {
         std::io::stdin().read_line(&mut input).unwrap();
         input = input.trim().to_string();
 
-        let mut interactive = crate::parser::parse_interactive(&input).unwrap();
-        eval(shell, &mut interactive);
+        let mut interactive = match crate::parser::parse_interactive(&input) {
+            Ok(i) => i,
+            Err(msg) => {
+                println!("{}", msg);
+                continue;
+            }
+        };
+        match eval(shell, &mut interactive) {
+            Ok(_) => {}
+            Err(msg) => println!("{}", msg),
+        }
     }
 }
 
 
 
 
-fn eval(shell: &mut Shell, input: &mut dyn Iterator<Item = Statement>) {
+fn eval(shell: &mut Shell, input: &mut dyn Iterator<Item = Statement>) -> Result<(), String> {
     match input.next() {
         Some(Statement::Assignment(assignment)) => {
             println!("Assignment: {:?} = {:?}", assignment.target, assignment.value);
-            let value = eval_expression(shell, assignment.value);
+            let value = eval_expression(shell, assignment.value)?;
             let env = shell.environment_mut();
             env.set(assignment.target, value);
         }
         Some(Statement::Expression(expression)) => {
             //println!("Expression: {:?}", expression);
-            let value = eval_expression(shell, expression);
-            println!("Value: {:?}", value);
+            let value = eval_expression(shell, expression)?;
+            println!("{}", format_value(&value));
         }
         None => {}
     }
+    Ok(())
 }
 
 
 
 
-fn eval_expression(shell: &mut Shell, expression: Expression) -> Value {
+fn eval_expression(shell: &mut Shell, expression: Expression) -> Result<Value,String> {
     match expression {
         Expression::Literal(literal) => {
-            literal.as_value()
+            Ok(literal.as_value())
         }
         Expression::Pipeline(pipeline) => {
             //println!("Pipeline: {:?}", pipeline);
@@ -54,7 +64,7 @@ fn eval_expression(shell: &mut Shell, expression: Expression) -> Value {
         }
         Expression::Variable(variable) => {
             let env = shell.environment();
-            env.get(&variable).unwrap().clone()
+            Ok(env.get(&variable).unwrap().clone())
         }
         Expression::Parenthesized(expression) => {
             eval_expression(shell, *expression)
@@ -63,13 +73,96 @@ fn eval_expression(shell: &mut Shell, expression: Expression) -> Value {
     }
 }
 
-fn eval_pipeline(shell: &mut Shell, mut pipeline: Box<Pipeline>) -> Value {
+fn eval_pipeline(shell: &mut Shell, mut pipeline: Box<Pipeline>) -> Result<Value, String> {
 
-    println!("Command: {:?}", pipeline);
+    //println!("Command: {:?}", pipeline);
     let command = &pipeline.command;
 
-    let ff = caat_rust::ForeignFunction::new(&command.name);
-    println!("{:?}", command.arguments_as_value(shell.environment()));
-    let return_value = ff.call(&command.arguments_as_value(shell.environment()));
-    return_value
+    match crate::builtins::run_builtin(shell, command) {
+        Ok(value) => Ok(value),
+        Err(Ok(())) => {
+            let ff = caat_rust::ForeignFunction::new(&command.name);
+            //println!("{:?}", command.arguments_as_value(shell.environment()));
+            let return_value = ff.call(&command.arguments_as_value(shell.environment()));
+            Ok(return_value)
+        }
+        Err(Err(msg)) => Err(msg),
+    }
+
 }
+
+
+fn format_value(value: &Value) -> String {
+    match value {
+        Value::Null => format!("()"),
+        Value::String(string) => format!("{}", string),
+        Value::List(list) => {
+            let mut result: Vec<Vec<String>> = vec![Vec::new()];
+            let mut current = 0;
+            for value in list.iter() {
+                
+                match value {
+                    Value::List(_) => {
+                        current += 1;
+                        result.push(Vec::new());
+                        result[current].extend_from_slice(&format_list(value));
+                    },
+                    _ => {
+                        result[current].push(format_value(value));
+                    }
+                }
+            }
+            let mut longest = Vec::new();
+            for row in &result {
+                for (i, cell) in row.iter().enumerate() {
+                    if longest.len() <= i {
+                        longest.push(0)
+                    }
+                    if cell.chars().count() > longest[i] {
+                        longest[i] = cell.chars().count();
+                    }
+                    
+                }
+            }
+            let mut output = String::new();
+            for (r, row) in result.iter().enumerate() {
+                for (i, cell) in row.iter().enumerate() {
+                    output.push_str(&String::from(" ").repeat(longest[i] - cell.chars().count()));
+                    output.push_str(cell);
+                    if i < row.len() - 1 {
+                        output.push_str("  ");
+                    }
+                }
+                if r < result.len() - 1 {
+                    output.push_str("\n");
+                }
+            }
+            output
+        }
+        Value::Float(f) => format!("{}", f),
+        Value::Integer(i) => format!("{}", i),
+        Value::Boolean(b) => format!("{}", b),
+        Value::CAATFunction(_) => format!("<foreign function>"),
+        Value::Map(_) => unimplemented!(),
+    }
+}
+
+
+fn format_list(value: &Value) -> Vec<String> {
+    match value {
+        Value::List(list) => {
+            let mut result = Vec::new();
+            for value in list.iter() {
+                
+                match value {
+                    Value::List(_) => unreachable!(),
+                    _ => {}
+                }
+                result.push(format_value(value));
+            }
+            result
+        }
+        _ => unreachable!()
+    }
+}
+

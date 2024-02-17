@@ -1,0 +1,117 @@
+
+
+use crate::lexer;
+use crate::parser::{Literal, Expression, Command, Pipeline, Operator};
+use std::str::FromStr;
+grammar<'input>(text: &'input str);
+
+
+
+
+
+
+pub Expression: Expression = {
+	<pe:ParenthesizedExpr> => Expression::Parenthesized(Box::new(pe)),
+	<l:Literal> => Expression::Literal(l),
+	<v:VariableExpr> => Expression::Variable(id),
+	<pipe:Pipeline> => Expression::Pipeline(pipe),
+}
+
+ParenthesizedExpr: Expression = {
+	<op:"("> <e:Expression> <cp:")"> => e,
+}
+
+VariableExpr: String = {
+	<d:"$"> <id:"Identifier"> => id,
+}
+
+
+Pipeline: Pipeline = {
+	<cmd:Command> => Pipeline {command: cmd, operator: None, next: None},
+	<c:Command> <op:Operator> <p:Pipeline> => Pipeline {command: c, operator: Some(op), next: Some(Box::new(p))}
+}
+
+Operator: Operator = {
+	<p:"|"> => Operator::Pipe,
+	<a:"&&"> => Operator::And,
+	<o:"||"> => Operator::Or,
+	<t:";"> => Operator::Then,
+}
+
+Command: Command = {
+	//<id:Identifier> => Command { name: id, args: vec![] },
+	<id:"Identifier"> <args:(Expression)*> => Command { name: id, args },
+	<id:("Identifier")+> <args:(Expression)*> => {
+		let command = id.join(" ");
+		Command { name: command, args }
+	},
+}
+
+
+pub Literal: Literal = {
+	<i:"Int"> => Literal::Integer(i),
+	<f:"Float"> => Literal::Float(f),
+	<b:"Boolean"> => Literal::Boolean(b),
+	//<null:Null> => Literal::Null,
+	<s:"String"> => Literal::String(s),
+	<l:List> => Literal::List(l),
+	<m:Map> => Literal::Map(m),
+}
+
+
+
+//Null: () = "null" => ();
+
+
+CommaSep<T>: Vec<T> = {
+	<es: CommaSep<T>> "," <e: T> => {
+		let mut v = es;
+		v.push(e);
+		v
+	},
+	<e: T> => vec![e],
+}
+
+
+List: Vec<Literal> = {
+	<bo:"["> <es:CommaSep<Literal>> <bc:"]"> => es,
+	<bo:"[">  <bc:"]"> => vec![],
+} 
+
+
+MapEntry: (String, Literal) = {
+	<s:"String"> <c:":"> <l:Literal> => (s, l),
+}
+
+Map: Vec<(String, Literal)> = {
+	<bo:"{"> <es:CommaSep<MapEntry>> <bc:"}"> => es,
+	<bo:"{"> <bc:"}"> => vec![],
+}
+
+
+
+extern {
+	type Location = usize;
+	type Error = lexer::Error;
+
+	enum lexer::Token<'input> {
+		"Identifier" => lexer::Token::Identifier,
+		"Int" => lexer::Token::Int,
+		"Float" => lexer::Token::Float,
+		"Boolean" => lexer::Token::Bool,
+		"String" => lexer::Token::String,
+		"$" => lexer::Token::Dollar,
+		"|" => lexer::Token::Pipe,
+		"&&" => lexer::Token::And,
+		"||" => lexer::Token::Or,
+		";" => lexer::Token::Then,
+		"{" => lexer::Token::BraceOpen,
+		"}" => lexer::Token::BraceClose,
+		"[" => lexer::Token::BracketOpen,
+		"]" => lexer::Token::BracketClose,
+		"," => lexer::Token::Comma,
+		":" => lexer::Token::Colon,
+		"(" => lexer::Token::ParenOpen,
+		")" => lexer::Token::ParenClose,
+	}
+}
