@@ -1,6 +1,6 @@
 use crate::{parser::{Expression, Pipeline, Statement}, shell::Shell};
 use std::io::Write;
-use caat_rust::Value;
+use caat_rust::{Caat,Value};
 
 
 

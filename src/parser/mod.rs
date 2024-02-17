@@ -54,6 +54,7 @@ pub enum Expression {
     Pipeline(Pipeline),
     Variable(String),
     Parenthesized(Box<Expression>),
+    HigherOrder(Pipeline),
 }
 
 impl Expression {
@@ -85,7 +86,7 @@ impl Literal {
             Literal::String(s) => Value::String(s.clone()),
             Literal::Boolean(b) => Value::Boolean(*b),
             Literal::List(l) => Value::List(l.iter().map(|l| l.as_value()).collect()),
-            Literal::Map(m) => Value::Dictionary(m.iter().map(|(k, v)| (k.clone(), v.as_value())).collect()),
+            Literal::Map(m) => Value::Map(m.iter().map(|(k, v)| (k.clone(), v.as_value())).collect()),
             Literal::Null => Value::Null,
         }
     }
