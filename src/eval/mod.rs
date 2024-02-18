@@ -74,6 +74,13 @@ fn eval_expression(shell: &mut Shell, expression: Expression) -> Result<Value,St
             hocmd.resolve_args(shell);
             Ok(Value::CAATFunction(Arc::new(hocmd)))
         }
+        Expression::If(cond, then, else_) => {
+            match eval_expression(shell, *cond)? {
+                Value::Boolean(true) => eval_expression(shell, *then),
+                Value::Boolean(false) => eval_expression(shell, *else_),
+                _ => Err("if: type error boolean not found".to_string()),
+            }
+        }
     }
 }
 
@@ -221,7 +228,6 @@ fn format_map(value: &Value) -> String {
                         }
                     },
                     _ => {continue;}
-                                    
                 }
             }
             for (key, value) in map.iter() {

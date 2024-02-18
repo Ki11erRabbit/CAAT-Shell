@@ -102,9 +102,13 @@ peg::parser!{
             = paren_open() e:expression() paren_close() {Expression::Parenthesized(Box::new(e))}
         rule higher_order() -> Expression
             = brace_open() [' '|'\t']* p:pipeline() [' '|'\t']* brace_close() {Expression::HigherOrder(p)}
-                    
+                   
+        rule if_expression() -> Expression 
+            = "if" [' '|'\t'|'\n']* cond:expression() [' '|'\t'|'\n']* "then" [' '|'\t'|'\n']* then:expression() [' '|'\t'|'\n']* "else" [' '|'\t'|'\n']* else_:expression() {
+            Expression::If(Box::new(cond), Box::new(then), Box::new(else_))
+            }
         pub rule expression() -> Expression
-            = e:(pipeline_expression() / variable_expression() / literal_expression() / paren_expression() / higher_order()) {e}
+            = e:(if_expression() / pipeline_expression() / variable_expression() / literal_expression() / paren_expression() / higher_order()) {e}
         pub rule command() -> Command
             = name:identifier() [' '|'\t']* args:expression() ** ([' '|'\t']+) {
                 if let Token::Identifier(name) = name {

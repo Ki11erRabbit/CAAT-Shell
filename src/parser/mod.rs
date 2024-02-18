@@ -52,6 +52,7 @@ pub enum Expression {
     Variable(String),
     Parenthesized(Box<Expression>),
     HigherOrder(Pipeline),
+    If(Box<Expression>, Box<Expression>, Box<Expression>),
 }
 
 impl Expression {
@@ -66,6 +67,18 @@ impl Expression {
                 ho.resolve_args_env(env);
                 Value::CAATFunction(Arc::new(ho))
             },
+            Expression::If(cond, then, else_) => {
+                let cond = cond.as_value(env);
+                if let Value::Boolean(b) = cond {
+                    if b {
+                        then.as_value(env)
+                    } else {
+                        else_.as_value(env)
+                    }
+                } else {
+                    Value::Failure(String::from("if: type error, expected boolean"))
+                }
+            }
         }
     }
 }
@@ -78,6 +91,7 @@ impl fmt::Display for Expression {
             Expression::Variable(v) => write!(f, "{}", v),
             Expression::Parenthesized(e) => write!(f, "({})", e),
             Expression::HigherOrder(h) => write!(f, "{}", h),
+            Expression::If(cond, then, else_) => write!(f, "if {} then {} else {}", cond, then, else_),
         }
     }
 }
