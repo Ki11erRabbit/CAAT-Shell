@@ -10,12 +10,12 @@ mod map;
 
 
 
-pub fn run_builtin(shell: &mut Shell, command: &Command) -> Result<Value,Result<(),String>> {
-    let name = &command.name;
-    let output = match name.as_str() {
-        "echo" => echo::echo(command.arguments_as_value(shell.environment())), 
-        "cd" => cd::cd(command.arguments_as_value(shell.environment())).map_err(|msg| Err(msg))?,
-        "ls" => ls::ls(command.arguments_as_value(shell.environment())).map_err(|msg| Err(msg))?,
+pub fn run_builtin(command_name: &str, args: &Vec<Value>) -> Result<Value,Result<(),String>> {
+    let output = match command_name {
+        "echo" => echo::echo(args), 
+        "cd" => cd::cd(args).map_err(|msg| Err(msg))?,
+        "ls" => ls::ls(args).map_err(|msg| Err(msg))?,
+        "map" => map::map(args).map_err(|msg| Err(msg))?,
         _ => return Err(Ok(())),
     };
     return Ok(output);

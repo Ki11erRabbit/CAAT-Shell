@@ -1,6 +1,7 @@
 use crate::{parser::{Expression, Pipeline, Statement}, shell::Shell};
 use std::io::Write;
 use caat_rust::{Caat,Value};
+use std::rc::Rc;
 
 
 
@@ -69,16 +70,21 @@ fn eval_expression(shell: &mut Shell, expression: Expression) -> Result<Value,St
         Expression::Parenthesized(expression) => {
             eval_expression(shell, *expression)
         }
-            
+        Expression::HigherOrder(mut hocmd) => {
+            hocmd.resolve_args(shell);
+            Ok(Value::CAATFunction(Rc::new(hocmd)))
+        }
     }
 }
 
-fn eval_pipeline(shell: &mut Shell, mut pipeline: Box<Pipeline>) -> Result<Value, String> {
+fn eval_pipeline(shell: &mut Shell, pipeline: Box<Pipeline>) -> Result<Value, String> {
 
     //println!("Command: {:?}", pipeline);
     let command = &pipeline.command;
+    let name = &command.name;
+    let args: Vec<Value> = command.arguments_as_value(shell.environment());
 
-    match crate::builtins::run_builtin(shell, command) {
+    match crate::builtins::run_builtin(name.as_str(), &args) {
         Ok(value) => Ok(value),
         Err(Ok(())) => {
             let ff = caat_rust::ForeignFunction::new(&command.name);

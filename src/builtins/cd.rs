@@ -6,7 +6,7 @@ use std::env;
 
 
 
-pub fn cd(args: Vec<Value>) -> Result<Value, String> {
+pub fn cd(args: &Vec<Value>) -> Result<Value, String> {
     if args.len() == 0 {
         match env::var("HOME") {
             Ok(home) => {

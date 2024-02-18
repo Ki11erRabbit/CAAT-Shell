@@ -20,14 +20,14 @@ impl Ls {
         }
     }
     
-    fn parse_arguments(&mut self, args: Vec<Value>) {
+    fn parse_arguments(&mut self, args: &Vec<Value>) {
         for arg in args {
             match arg {
                 Value::String(s) => {
                     match s.as_str() {
                         "-a" => self.show_all = true,
                         "-l" => self.show_long = true,
-                        _ => self.path = Some(s),
+                        _ => self.path = Some(s.to_string()),
                     }
                 }
                 _ => {}
@@ -44,7 +44,11 @@ impl Ls {
     }
     
     fn short_output(&self) -> Result<Value, String> {
-        let paths = fs::read_dir(".").map_err(|e| e.to_string())?;
+        let paths = if let Some(path) = &self.path {
+            fs::read_dir(path).map_err(|e| e.to_string())?
+        } else {
+            fs::read_dir(".").map_err(|e| e.to_string())?
+        };
         let mut result = Vec::new();
         for path in paths {
             let path = path.map_err(|e| e.to_string())?.path();
@@ -63,7 +67,11 @@ impl Ls {
     }
     
     fn long_output(&self) -> Result<Value, String> {
-        let paths = fs::read_dir(".").map_err(|e| e.to_string())?;
+        let paths = if let Some(path) = &self.path {
+            fs::read_dir(path).map_err(|e| e.to_string())?
+        } else {
+            fs::read_dir(".").map_err(|e| e.to_string())?
+        };
         let mut result = Vec::new();
         for path in paths {
             let path = path.map_err(|e| e.to_string())?.path();
@@ -144,7 +152,7 @@ impl Ls {
 
 
 
-pub fn ls(args: Vec<Value>) -> Result<Value,String> {
+pub fn ls(args: &Vec<Value>) -> Result<Value,String> {
     let mut ls = Ls::new();
     ls.parse_arguments(args);
     return ls.output();

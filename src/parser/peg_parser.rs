@@ -100,12 +100,15 @@ peg::parser!{
             = l:literal() {Expression::Literal(l)}
         rule paren_expression() -> Expression
             = paren_open() e:expression() paren_close() {Expression::Parenthesized(Box::new(e))}
+        rule higher_order() -> Expression
+            = brace_open() [' '|'\t']* p:pipeline() [' '|'\t']* brace_close() {Expression::HigherOrder(p)}
+                    
         pub rule expression() -> Expression
-            = e:(variable_expression() / literal_expression() / paren_expression() / pipeline_expression()) {e}
+            = e:(variable_expression() / literal_expression() / paren_expression() / pipeline_expression() / higher_order()) {e}
         pub rule command() -> Command
             = name:identifier() [' '|'\t']* args:expression() ** ([' '|'\t']+) {
                 if let Token::Identifier(name) = name {
-                    Command{name: name, arguments: args}
+                    Command::new(name, args)
                 } else {
                     unimplemented!()
                 }
@@ -196,13 +199,13 @@ mod tests {
     
     #[test]
     fn test_command() {
-        assert_eq!(parser::command("foo 42"), Ok(Command{name: "foo".to_string(), arguments: vec![Expression::Literal(Literal::Integer(42))]}));
+        assert_eq!(parser::command("foo 42"), Ok(Command::new("foo".to_string(), vec![Expression::Literal(Literal::Integer(42))])));
     }
     
     #[test]
     fn test_pipeline() {
-        assert_eq!(parser::pipeline("foo 42 | bar 43"), Ok(Pipeline{command: Command{name: "foo".to_string(), arguments: vec![Expression::Literal(Literal::Integer(42))]}, operator: Some(Operator::Pipe), next: Some(Box::new(Pipeline{command: Command{name: "bar".to_string(), arguments: vec![Expression::Literal(Literal::Integer(43))]}, operator: None, next: None}))}));
-        assert_eq!(parser::pipeline("foo true false"), Ok(Pipeline{command: Command{name: "foo".to_string(), arguments: vec![Expression::Literal(Literal::Boolean(true)), Expression::Literal(Literal::Boolean(false))]}, operator: None, next: None}));
+        assert_eq!(parser::pipeline("foo 42 | bar 43"), Ok(Pipeline{command: Command::new("foo".to_string(), vec![Expression::Literal(Literal::Integer(42))]), operator: Some(Operator::Pipe), next: Some(Box::new(Pipeline{command: Command::new("bar".to_string(), vec![Expression::Literal(Literal::Integer(43))]), operator: None, next: None}))}));
+        assert_eq!(parser::pipeline("foo true false"), Ok(Pipeline{command: Command::new("foo".to_string(), vec![Expression::Literal(Literal::Boolean(true)), Expression::Literal(Literal::Boolean(false))]), operator: None, next: None}));
     }
 
 }

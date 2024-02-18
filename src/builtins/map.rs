@@ -24,7 +24,7 @@ fn find_list<'input>(list: &'input Vec<Value>) -> Result<&'input Value, String> 
 
 
 
-pub fn map(args: Vec<Value>) -> Result<Value,String> {
+pub fn map(args: &Vec<Value>) -> Result<Value,String> {
     let list = match find_list(&args)? {
         Value::List(l) => l,
         _ => return Err("No list found".to_string()),

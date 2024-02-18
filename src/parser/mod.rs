@@ -3,10 +3,12 @@
 
 mod peg_parser;
 
-use caat_rust::Value;
+use caat_rust::{Caat, Value};
 pub use peg_parser::{parse_file, parse_interactive};
+use std::fmt;
+use std::rc::Rc;
 
-use crate::shell::Environment;
+use crate::shell::{Environment, Shell};
 
 pub struct File {
     pub statements: Vec<Statement>,
@@ -57,7 +59,25 @@ impl Expression {
         match self {
             Expression::Literal(literal) => literal.as_value(),
             Expression::Variable(string) => env.get(&string).unwrap().clone(),
-            _ => unimplemented!(),
+            Expression::Pipeline(pipeline) => pipeline.call(&[]),
+            Expression::Parenthesized(expression) => expression.as_value(env),
+            Expression::HigherOrder(ho) => {
+                let mut ho = ho.clone();
+                ho.resolve_args_env(env);
+                Value::CAATFunction(Rc::new(ho))
+            },
+        }
+    }
+}
+
+impl fmt::Display for Expression {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Expression::Literal(l) => write!(f, "{}", l),
+            Expression::Pipeline(p) => write!(f, "{}", p),
+            Expression::Variable(v) => write!(f, "{}", v),
+            Expression::Parenthesized(e) => write!(f, "({})", e),
+            Expression::HigherOrder(h) => write!(f, "{}", h),
         }
     }
 }
@@ -87,6 +107,37 @@ impl Literal {
     }
 }
 
+impl fmt::Display for Literal {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Literal::Integer(i) => write!(f, "{}", i),
+            Literal::Float(fl) => write!(f, "{}", fl),
+            Literal::String(s) => write!(f, "{}", s),
+            Literal::Boolean(b) => write!(f, "{}", b),
+            Literal::List(l) => {
+                write!(f, "[")?;
+                for (i, item) in l.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", item)?;
+                }
+                write!(f, "]")
+            }
+            Literal::Map(m) => {
+                write!(f, "{{")?;
+                for (i, (k, v)) in m.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}: {}", k, v)?;
+                }
+                write!(f, "}}")
+            }
+            Literal::Null => write!(f, "()"),
+        }
+    }
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Pipeline {
@@ -95,15 +146,98 @@ pub struct Pipeline {
     pub next: Option<Box<Pipeline>>,
 }
 
+impl Pipeline {
+    pub fn new(command: Command) -> Pipeline {
+        Pipeline {
+            command,
+            operator: None,
+            next: None,
+        }
+    }
+
+    pub fn resolve_args(&mut self, shell: &Shell) {
+        self.command.resolve_args(shell);
+        if let Some(next) = &mut self.next {
+            next.resolve_args(shell);
+        }
+    }
+    pub fn resolve_args_env(&mut self, env: &Environment) {
+        self.command.resolve_args_env(env);
+        if let Some(next) = &mut self.next {
+            next.resolve_args_env(env);
+        }
+    }
+}
+
+impl Caat for Pipeline {
+    fn call(&self, args: &[Value]) -> Value {
+        let ff = caat_rust::ForeignFunction::new(&self.command.name);
+        let mut new_args = self.command.args.clone();
+        new_args.extend_from_slice(args);
+        match crate::builtins::run_builtin(self.command.name.as_str(), &new_args) {
+            Ok(value) => {
+                match (&self.operator, &self.next) {
+                    (Some(Operator::Pipe), Some(next)) => {
+                        return next.call(&[value]);
+                    }
+                    _ => value,
+                }
+            },
+            Err(Ok(())) => {
+                let value = ff.call(&new_args);
+                match (&self.operator, &self.next) {
+                    (Some(Operator::Pipe), Some(next)) => {
+                        next.call(&[value])
+                    }
+                    _ => value,
+                }
+            },
+            Err(Err(msg)) => {
+                return Value::String(msg);
+            }
+        }
+    }
+}
+
+impl fmt::Display for Pipeline {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.command.name)?;
+        for arg in &self.command.arguments {
+            write!(f, " {}", arg)?;
+        }
+        if let Some(next) = &self.next {
+            write!(f, " | {}", next)?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct Command {
     pub name: String,
     pub arguments: Vec<Expression>,
+    pub args: Vec<Value>,
 }
 
 impl Command {
+    pub fn new(name: String, arguments: Vec<Expression>) -> Command {
+        Command {
+            name,
+            arguments,
+            args: Vec::new(),
+        }
+    }
     pub fn arguments_as_value(&self, env: &Environment) -> Vec<Value> {
         self.arguments.iter().map(|arg| arg.as_value(env)).collect()
+    }
+    
+    pub fn resolve_args(&mut self, shell: &Shell) {
+        let env = shell.environment();
+        self.args = self.arguments_as_value(env);
+    }
+
+    pub fn resolve_args_env(&mut self, env: &Environment) {
+        self.args = self.arguments_as_value(env);
     }
 }
 
