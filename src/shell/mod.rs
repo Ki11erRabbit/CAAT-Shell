@@ -1,9 +1,12 @@
 use std::collections::HashMap;
 use caat_rust::Value;
+use job_manager::JobManager;
 
+pub mod job_manager;
 
 pub struct Shell {
     environment: Environment,
+    job_manager: JobManager,
 }
 
 
@@ -11,6 +14,7 @@ impl Shell {
     pub fn new() -> Self {
         Shell {
             environment: Environment::new(),
+            job_manager: JobManager::new(),
         }
     }
     pub fn environment(&self) -> &Environment {
@@ -18,6 +22,12 @@ impl Shell {
     }
     pub fn environment_mut(&mut self) -> &mut Environment {
         &mut self.environment
+    }
+    pub fn job_manager(&self) -> &JobManager {
+        &self.job_manager
+    }
+    pub fn job_manager_mut(&mut self) -> &mut JobManager {
+        &mut self.job_manager
     }
 }
 
@@ -31,7 +41,7 @@ pub struct Environment {
 
 impl Environment {
     pub fn new() -> Self {
-        let mut global = HashMap::new();
+        let global = HashMap::new();
         Environment {
             global,
             scoped: vec![],

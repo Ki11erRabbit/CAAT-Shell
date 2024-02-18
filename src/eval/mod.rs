@@ -1,7 +1,7 @@
 use crate::{parser::{Expression, Pipeline, Statement}, shell::Shell};
 use std::io::Write;
 use caat_rust::{Caat,Value};
-use std::rc::Rc;
+use std::sync::Arc;
 
 
 
@@ -61,7 +61,7 @@ fn eval_expression(shell: &mut Shell, expression: Expression) -> Result<Value,St
         }
         Expression::Pipeline(pipeline) => {
             //println!("Pipeline: {:?}", pipeline);
-            eval_pipeline(shell, Box::new(pipeline))
+            eval_pipeline(shell, &pipeline, None)
         }
         Expression::Variable(variable) => {
             let env = shell.environment();
@@ -72,27 +72,58 @@ fn eval_expression(shell: &mut Shell, expression: Expression) -> Result<Value,St
         }
         Expression::HigherOrder(mut hocmd) => {
             hocmd.resolve_args(shell);
-            Ok(Value::CAATFunction(Rc::new(hocmd)))
+            Ok(Value::CAATFunction(Arc::new(hocmd)))
         }
     }
 }
 
-fn eval_pipeline(shell: &mut Shell, pipeline: Box<Pipeline>) -> Result<Value, String> {
+fn eval_pipeline(shell: &mut Shell, pipeline: &Pipeline, arg: Option<Value>) -> Result<Value, String> {
 
     //println!("Command: {:?}", pipeline);
     let command = &pipeline.command;
     let name = &command.name;
     let args: Vec<Value> = command.arguments_as_value(shell.environment());
+    let args = match arg {
+        Some(arg) => {
+            let mut args = args;
+            args.push(arg);
+            args
+        }
+        None => args,
+    };
 
-    match crate::builtins::run_builtin(name.as_str(), &args) {
+    let value = match crate::builtins::run_builtin(Some(shell), name.as_str(), &args) {
         Ok(value) => Ok(value),
         Err(Ok(())) => {
             let ff = caat_rust::ForeignFunction::new(&command.name);
             //println!("{:?}", command.arguments_as_value(shell.environment()));
-            let return_value = ff.call(&command.arguments_as_value(shell.environment()));
+            let return_value = match ff.call(&command.arguments_as_value(shell.environment())) {
+                Value::Failure(msg) => return Err(msg),
+                value => value,
+            };
             Ok(return_value)
         }
         Err(Err(msg)) => Err(msg),
+    };
+    
+    match (&pipeline.operator, &pipeline.next) {
+        (Some(crate::parser::Operator::Pipe), Some(next)) => {
+            eval_pipeline(shell, next, Some(value?))
+        }
+        (Some(crate::parser::Operator::Then), Some(next)) => {
+            eval_pipeline(shell, next, None) 
+        }
+        (Some(crate::parser::Operator::And), Some(next)) => {
+            match value? {
+                Value::Failure(msg) => return Err(msg),
+                _ => {}
+            }
+            eval_pipeline(shell, next, None) 
+        }
+        (Some(crate::parser::Operator::Or), Some(next)) => {
+            eval_pipeline(shell, next, None) 
+        }
+        _ => value,
     }
 
 }
@@ -150,6 +181,7 @@ fn format_value(value: &Value) -> String {
         Value::Boolean(b) => format!("{}", b),
         Value::CAATFunction(_) => format!("<foreign function>"),
         Value::Map(_) => unimplemented!(),
+        Value::Failure(msg) => format!("Failure: {}", msg),
     }
 }
 
@@ -165,6 +197,35 @@ fn format_list(value: &Value) -> Vec<String> {
                     _ => {}
                 }
                 result.push(format_value(value));
+            }
+            result
+        }
+        _ => unreachable!()
+    }
+}
+
+fn format_map(value: &Value) -> String {
+    match value {
+        Value::Map(map) => {
+            let mut result = String::new();
+            let mut format = None;
+            for (key, value) in map.iter() {
+                match key.as_str() {
+                    "fmt" => {
+                        match value {
+                            Value::String(string) => {
+                                format = Some(string.clone());
+                                break;
+                            }
+                            _ => {}
+                        }
+                    },
+                    _ => {continue;}
+                                    
+                }
+            }
+            for (key, value) in map.iter() {
+                result.push_str(&format!("{}: {}\n", key, format_value(value)));
             }
             result
         }

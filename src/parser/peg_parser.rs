@@ -104,7 +104,7 @@ peg::parser!{
             = brace_open() [' '|'\t']* p:pipeline() [' '|'\t']* brace_close() {Expression::HigherOrder(p)}
                     
         pub rule expression() -> Expression
-            = e:(variable_expression() / literal_expression() / paren_expression() / pipeline_expression() / higher_order()) {e}
+            = e:(pipeline_expression() / variable_expression() / literal_expression() / paren_expression() / higher_order()) {e}
         pub rule command() -> Command
             = name:identifier() [' '|'\t']* args:expression() ** ([' '|'\t']+) {
                 if let Token::Identifier(name) = name {
@@ -138,13 +138,13 @@ peg::parser!{
                 if let Token::Identifier(s) = id {
                     Assignment{target: s, value: e}
                 } else {
-                    unimplemented!()
+                    unreachable!()
                 }
             }
         rule assignment_statement() -> Statement
             = a:assignment() {Statement::Assignment(a)}
         rule statement() -> Statement
-            = s:(expression_statement() / assignment_statement()) {s}
+            = s:(assignment_statement() / expression_statement()) {s}
         pub rule interactive() -> Interactive
             = s:statement() {Interactive { statement: Some(s) }}
         pub rule file() -> File

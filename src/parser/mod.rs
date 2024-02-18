@@ -6,7 +6,7 @@ mod peg_parser;
 use caat_rust::{Caat, Value};
 pub use peg_parser::{parse_file, parse_interactive};
 use std::fmt;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::shell::{Environment, Shell};
 
@@ -64,7 +64,7 @@ impl Expression {
             Expression::HigherOrder(ho) => {
                 let mut ho = ho.clone();
                 ho.resolve_args_env(env);
-                Value::CAATFunction(Rc::new(ho))
+                Value::CAATFunction(Arc::new(ho))
             },
         }
     }
@@ -174,11 +174,20 @@ impl Caat for Pipeline {
         let ff = caat_rust::ForeignFunction::new(&self.command.name);
         let mut new_args = self.command.args.clone();
         new_args.extend_from_slice(args);
-        match crate::builtins::run_builtin(self.command.name.as_str(), &new_args) {
+        match crate::builtins::run_builtin(None, self.command.name.as_str(), &new_args) {
             Ok(value) => {
                 match (&self.operator, &self.next) {
                     (Some(Operator::Pipe), Some(next)) => {
                         return next.call(&[value]);
+                    }
+                    (Some(Operator::Then), Some(next)) => {
+                        return next.call(&[]);
+                    }
+                    (Some(Operator::And), Some(next)) => {
+                        return next.call(&[]);
+                    }
+                    (Some(Operator::Or), Some(next)) => {
+                        return next.call(&[]);
                     }
                     _ => value,
                 }
@@ -187,7 +196,16 @@ impl Caat for Pipeline {
                 let value = ff.call(&new_args);
                 match (&self.operator, &self.next) {
                     (Some(Operator::Pipe), Some(next)) => {
-                        next.call(&[value])
+                        return next.call(&[value]);
+                    }
+                    (Some(Operator::Then), Some(next)) => {
+                        return next.call(&[]);
+                    }
+                    (Some(Operator::And), Some(next)) => {
+                        return next.call(&[]);
+                    }
+                    (Some(Operator::Or), Some(next)) => {
+                        return next.call(&[]);
                     }
                     _ => value,
                 }
