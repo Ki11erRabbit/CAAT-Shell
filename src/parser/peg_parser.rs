@@ -33,6 +33,9 @@ peg::parser!{
                 match match_str {
                     "true" => Err("boolean not identifier"),
                     "false" => Err("boolean not identifier"),
+                    "if" => Err("if not identifier"),
+                    "then" => Err("then not identifier"),
+                    "else" => Err("else not identifier"),
                     _ => Ok(Token::Identifier(match_str.to_string())),
                 }
             }

@@ -1,4 +1,5 @@
 use caat_rust::Value;
+use std::collections::HashMap;
 
 
 
@@ -56,12 +57,15 @@ impl JobManager {
             handle,
         }));
         self.next_id = Some(id + 1);
-        Ok(Value::Map(vec![(String::from("id"), Value::Integer(id)), (String::from("Command"), Value::String(command))]))
+        let mut output = HashMap::new();
+        output.insert(String::from("id"), Value::Integer(id));
+        output.insert(String::from("Command"), Value::String(command));
+        Ok(Value::Map(output, None))
     }
 
     pub fn join(&mut self, job: Value) -> Result<Value, String> {
         let id = match job {
-            Value::Map(members) => {
+            Value::Map(members, _) => {
                 let mut id = None;
                 for (key, value) in members {
                     if key == "id" {

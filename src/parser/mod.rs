@@ -115,7 +115,10 @@ impl Literal {
             Literal::String(s) => Value::String(s.clone()),
             Literal::Boolean(b) => Value::Boolean(*b),
             Literal::List(l) => Value::List(l.iter().map(|l| l.as_value()).collect()),
-            Literal::Map(m) => Value::Map(m.iter().map(|(k, v)| (k.clone(), v.as_value())).collect()),
+            Literal::Map(m) => {
+                let map = m.iter().map(|(k, v)| (k.clone(), v.as_value())).collect();
+                Value::Map(map, None)
+            },
             Literal::Null => Value::Null,
         }
     }

@@ -187,7 +187,7 @@ fn format_value(value: &Value) -> String {
         Value::Integer(i) => format!("{}", i),
         Value::Boolean(b) => format!("{}", b),
         Value::CAATFunction(_) => format!("<foreign function>"),
-        Value::Map(_) => unimplemented!(),
+        Value::Map(_,_) => unimplemented!(),
         Value::Failure(msg) => format!("Failure: {}", msg),
     }
 }
@@ -213,7 +213,7 @@ fn format_list(value: &Value) -> Vec<String> {
 
 fn format_map(value: &Value) -> String {
     match value {
-        Value::Map(map) => {
+        Value::Map(map, fmt) => {
             let mut result = String::new();
             let mut format = None;
             for (key, value) in map.iter() {
