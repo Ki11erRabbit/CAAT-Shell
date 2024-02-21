@@ -9,4 +9,5 @@ edition = "2021"
 caat_rust = { git = "https://github.com/Ki11erRabbit/caat_rust.git" }
 peg = "0.8.2"
 chrono = "0.4.34"
+regex = "1.10.3"
 

@@ -1,6 +1,7 @@
 use crate::{parser::{Expression, Pipeline, Statement}, shell::Shell};
 use std::io::Write;
 use caat_rust::{Caat,Value};
+use regex::Regex;
 use std::sync::Arc;
 
 
@@ -151,6 +152,11 @@ fn format_value(value: &Value) -> String {
                         result.push(Vec::new());
                         result[current].extend_from_slice(&format_list(value));
                     },
+                    Value::Map(_, _) => {
+                        current += 1;
+                        result.push(Vec::new());
+                        result[current].extend_from_slice(&format_map(value));
+                    }
                     _ => {
                         result[current].push(format_value(value));
                     }
@@ -187,7 +193,7 @@ fn format_value(value: &Value) -> String {
         Value::Integer(i) => format!("{}", i),
         Value::Boolean(b) => format!("{}", b),
         Value::CAATFunction(_) => format!("<foreign function>"),
-        Value::Map(_,_) => unimplemented!(),
+        Value::Map(_,_) => format_map(value).join("  "),
         Value::Failure(msg) => format!("Failure: {}", msg),
     }
 }
@@ -211,29 +217,37 @@ fn format_list(value: &Value) -> Vec<String> {
     }
 }
 
-fn format_map(value: &Value) -> String {
+fn format_map(value: &Value) -> Vec<String> {
     match value {
         Value::Map(map, fmt) => {
-            let mut result = String::new();
-            let mut format = None;
-            for (key, value) in map.iter() {
-                match key.as_str() {
-                    "fmt" => {
-                        match value {
-                            Value::String(string) => {
-                                format = Some(string.clone());
-                                break;
+            match fmt {
+                Some(fmt) => {
+                    let mut result = Vec::new();
+                    let re = Regex::new(r"(\{\S+\})").unwrap();
+                    for x in re.captures_iter(fmt.as_str()) {
+                        if let Some(x) = x.get(0) {
+                            let key = x.as_str().chars().skip(1).take(x.as_str().chars().count() - 2).collect::<String>();
+                            
+                            if let Some(value) = map.get(&key) {
+                                result.push(format!("{}", &format_value(value)));
+                            } else {
+                                result.push(format!("{}: <not found>", key));
                             }
-                            _ => {}
+
+                        } else {
+                            break;
                         }
-                    },
-                    _ => {continue;}
+                    }
+                    result
+                }
+                None => {
+                    let mut result = Vec::new();
+                    for (key, value) in map.iter() {
+                        result.push(format!("{}: {}  ", key, format_value(value)));
+                    }
+                    result
                 }
             }
-            for (key, value) in map.iter() {
-                result.push_str(&format!("{}: {}\n", key, format_value(value)));
-            }
-            result
         }
         _ => unreachable!()
     }

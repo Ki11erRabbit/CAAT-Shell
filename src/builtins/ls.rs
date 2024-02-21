@@ -4,6 +4,7 @@ use caat_rust::Value;
 use std::os::unix::fs::PermissionsExt;
 use chrono::prelude::*;
 use chrono::Utc;
+use std::collections::HashMap;
 
 struct Ls {
     show_all: bool,
@@ -36,37 +37,6 @@ impl Ls {
     }
     
     fn output(&self) -> Result<Value, String> {
-        if self.show_long {
-            return self.long_output();
-        } else {
-            return self.short_output();
-        }
-    }
-    
-    fn short_output(&self) -> Result<Value, String> {
-        let paths = if let Some(path) = &self.path {
-            fs::read_dir(path).map_err(|e| e.to_string())?
-        } else {
-            fs::read_dir(".").map_err(|e| e.to_string())?
-        };
-        let mut result = Vec::new();
-        for path in paths {
-            let path = path.map_err(|e| e.to_string())?.path();
-            match path.file_name() {
-                None => continue,
-                Some(name) => {
-                    let name = name.to_str().ok_or("Failed to turn path into str".to_string())?;
-                    if name.starts_with(".") && !self.show_all {
-                        continue;
-                    }
-                    result.push(Value::String(name.to_string()));
-                }
-            }
-        }
-        return Ok(Value::List(result.into()))
-    }
-    
-    fn long_output(&self) -> Result<Value, String> {
         let paths = if let Some(path) = &self.path {
             fs::read_dir(path).map_err(|e| e.to_string())?
         } else {
@@ -82,14 +52,36 @@ impl Ls {
             let size = metadata.len();
             let metadata = Self::metadata_string(metadata);
             let name = path.file_name().ok_or("unable to get file_name".to_string())?.to_str().ok_or("unable to get str".to_string())?;
+            if name.starts_with(".") && !self.show_all {
+                continue;
+            }
             let metadata = Value::String(metadata);
             let size = Value::Integer(size as i64);
             let modified_time = Value::String(modified_time);
             let name = Value::String(name.to_string());
-            result.push(Value::List(vec![metadata, size, modified_time, name].into()));
+
+
+            let mut obj_hash = HashMap::new();
+            obj_hash.insert("type".to_string(), Value::String("dir_entry".to_string()));
+            obj_hash.insert("metadata".to_string(), metadata);
+            obj_hash.insert("size".to_string(), size);
+            obj_hash.insert("modified_time".to_string(), modified_time);
+            obj_hash.insert("name".to_string(), name);
+            obj_hash.insert("full_path".to_string(), Value::String(path.to_str().ok_or(String::from("bad path"))?.to_string()));
+
+            let format = if self.show_long {
+                Some(String::from("{metadata} {size} {modified_time} {name}"))
+            } else {
+                Some(String::from("{name}"))
+            };
+            
+            
+            result.push(Value::Map(obj_hash, format));
         }
         return Ok(result.into())
     }
+    
+    
 
     fn metadata_string(metadata: Metadata) -> String {
         let mut output = String::new();
