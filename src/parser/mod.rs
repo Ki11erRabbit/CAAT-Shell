@@ -21,6 +21,7 @@ impl Iterator for File {
     }
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub struct Interactive {
     pub statement: Option<Statement>,
 }
@@ -53,6 +54,7 @@ pub enum Expression {
     Parenthesized(Box<Expression>),
     HigherOrder(Pipeline),
     If(Box<Expression>, Box<Expression>, Box<Expression>),
+    Access(Box<Expression>, Box<Expression>),
 }
 
 impl Expression {
@@ -78,6 +80,34 @@ impl Expression {
                 } else {
                     Value::Failure(String::from("if: type error, expected boolean"))
                 }
+            },
+            Expression::Access(thing, index) => {
+                let thing = thing.as_value(env);
+                let index = index.as_value(env);
+                match thing {
+                    Value::List(list) => {
+                        if let Value::Integer(i) = index {
+                            if i < 0 || i as usize >= list.len() {
+                                return Value::Failure(format!("Index out of bounds: {}", i));
+                            }
+                            list[i as usize].clone()
+                        } else {
+                            Value::Failure(String::from("Index must be an integer"))
+                        }
+                    },
+                    Value::Map(map, _) => {
+                        if let Value::String(s) = index {
+                            if let Some(value) = map.get(&s) {
+                                return value.clone();
+                            } else {
+                                return Value::Failure(format!("Key not found: {}", s));
+                            }
+                        } else {
+                            return Value::Failure(String::from("Key must be a string"));
+                        }
+                    },
+                    _ => Value::Failure(format!("Can't access {} with index {}", thing, index)),
+                }
             }
         }
     }
@@ -92,6 +122,7 @@ impl fmt::Display for Expression {
             Expression::Parenthesized(e) => write!(f, "({})", e),
             Expression::HigherOrder(h) => write!(f, "{}", h),
             Expression::If(cond, then, else_) => write!(f, "if {} then {} else {}", cond, then, else_),
+            Expression::Access(thing, index) => write!(f, "access {} at {}", thing, index),
         }
     }
 }

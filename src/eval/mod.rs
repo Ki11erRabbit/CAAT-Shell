@@ -24,6 +24,7 @@ pub fn repl(shell: &mut Shell) {
                 continue;
             }
         };
+        //eprintln!("{:?}", interactive);
         match eval(shell, &mut interactive) {
             Ok(_) => {}
             Err(msg) => println!("{}", msg),
@@ -80,6 +81,29 @@ fn eval_expression(shell: &mut Shell, expression: Expression) -> Result<Value,St
                 Value::Boolean(true) => eval_expression(shell, *then),
                 Value::Boolean(false) => eval_expression(shell, *else_),
                 _ => Err("if: type error boolean not found".to_string()),
+            }
+        }
+        Expression::Access(thing, index) => {
+            let thing = eval_expression(shell, *thing)?;
+            let index = eval_expression(shell, *index)?;
+            match thing {
+                Value::List(list) => {
+                    match index {
+                        Value::Integer(i) => {
+                            Ok(list[i as usize].clone())
+                        }
+                        _ => Err("List index must be an integer".to_string()),
+                    }
+                }
+                Value::Map(map, _) => {
+                    match index {
+                        Value::String(s) => {
+                            Ok(map.get(&s).unwrap().clone())
+                        }
+                        _ => Err("Map index must be a string".to_string()),
+                    }
+                }
+                _ => Err("access: type error".to_string()),
             }
         }
     }

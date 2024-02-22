@@ -36,6 +36,8 @@ peg::parser!{
                     "if" => Err("if not identifier"),
                     "then" => Err("then not identifier"),
                     "else" => Err("else not identifier"),
+                    "access" => Err("access not identifier"),
+                    "at" => Err("at not identifier"),
                     _ => Ok(Token::Identifier(match_str.to_string())),
                 }
             }
@@ -110,12 +112,22 @@ peg::parser!{
             = "if" [' '|'\t'|'\n']* cond:expression() [' '|'\t'|'\n']* "then" [' '|'\t'|'\n']* then:expression() [' '|'\t'|'\n']* "else" [' '|'\t'|'\n']* else_:expression() {
             Expression::If(Box::new(cond), Box::new(then), Box::new(else_))
             }
+        rule access_expression() -> Expression 
+            = "access" [' '|'\t']* thing:expression() [' '|'\t']* "at" [' '|'\t']* index:expression() {
+                Expression::Access(Box::new(thing), Box::new(index))
+            }
         pub rule expression() -> Expression
-            = e:(if_expression() / pipeline_expression() / variable_expression() / literal_expression() / paren_expression() / higher_order()) {e}
+            = e:(if_expression() / pipeline_expression() / access_expression() / variable_expression() / literal_expression() / paren_expression() / higher_order()) {e}
         pub rule command() -> Command
-            = name:identifier() [' '|'\t']* args:expression() ** ([' '|'\t']+) {
+            = name:identifier() [' '|'\t']+ args:expression() ** ([' '|'\t']+) {
                 if let Token::Identifier(name) = name {
                     Command::new(name, args)
+                } else {
+                    unimplemented!()
+                }
+            } / name:identifier() {
+                if let Token::Identifier(name) = name {
+                    Command::new(name, vec![])
                 } else {
                     unimplemented!()
                 }
@@ -153,7 +165,7 @@ peg::parser!{
         rule statement() -> Statement
             = s:(assignment_statement() / expression_statement()) {s}
         pub rule interactive() -> Interactive
-            = s:statement() {Interactive { statement: Some(s) }}
+            = s:statement() ![_]{Interactive { statement: Some(s) }}
         pub rule file() -> File
             = s:statement() ** (['\r']?['\n']+) {File { statements: s }}
     }
