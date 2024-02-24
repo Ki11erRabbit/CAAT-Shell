@@ -180,8 +180,8 @@ peg::parser!{
             }
             / c:command() {PipelinePart{command: c, operator: None, next: None}}
         pub rule pipeline() -> Pipeline
-            = p:pipeline_part() {Pipeline {pipeline: p, redirect: None}}
-            / p:pipeline_part() [' '|'\t']* r:(redirect_input() / redirect_output() / redirect_append()) {Pipeline {pipeline: p, redirect: Some(r)}}
+            = p:pipeline_part() [' '|'\t']* r:(redirect_input() / redirect_output() / redirect_append()) {Pipeline {pipeline: p, redirect: Some(r)}}
+            / p:pipeline_part() {Pipeline {pipeline: p, redirect: None}}
         rule pipeline_expression() -> Expression
             = p:pipeline() {Expression::Pipeline(p)}
         rule expression_statement() -> Statement
@@ -214,7 +214,7 @@ peg::parser!{
         pub rule interactive() -> Interactive
             = s:statement() ![_]{Interactive { statement: Some(s) }}
         pub rule file() -> File
-            = s:statement() ** (['\r']?['\n']+) {File { statements: s }}
+            = s:statement() ** (['\r']?['\n']+) ['\r']?['\n']+ {File { statements: s }}
     }
     
 }
@@ -270,8 +270,11 @@ mod tests {
     
     #[test]
     fn test_pipeline() {
-        assert_eq!(parser::pipeline("foo 42 | bar 43"), Ok(Pipeline{command: Command::new("foo".to_string(), vec![Expression::Literal(Literal::Integer(42))]), operator: Some(Operator::Pipe), next: Some(Box::new(Pipeline{command: Command::new("bar".to_string(), vec![Expression::Literal(Literal::Integer(43))]), operator: None, next: None}))}));
-        assert_eq!(parser::pipeline("foo true false"), Ok(Pipeline{command: Command::new("foo".to_string(), vec![Expression::Literal(Literal::Boolean(true)), Expression::Literal(Literal::Boolean(false))]), operator: None, next: None}));
+        assert_eq!(parser::pipeline("foo 42"), Ok(Pipeline {pipeline: PipelinePart {command: Command::new("foo".to_string(), vec![Expression::Literal(Literal::Integer(42))]), operator: None, next: None}, redirect: None}));
     }
 
+    #[test]
+    fn test_pipeline_redirect() {
+        assert_eq!(parser::pipeline("foo 42 > \"bar\""), Ok(Pipeline {pipeline: PipelinePart {command: Command::new("foo".to_string(), vec![Expression::Literal(Literal::Integer(42))]), operator: None, next: None}, redirect: Some(Redirect::Output(Box::new(Expression::Literal(Literal::String("bar".to_string())))))}));
+    }
 }

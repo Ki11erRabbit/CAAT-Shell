@@ -8,6 +8,7 @@ mod map;
 mod conditionals;
 mod background;
 mod list_utils;
+mod search;
 
 
 
@@ -23,6 +24,7 @@ pub fn run_builtin(shell: Option<&mut Shell>, command_name: &str, args: &Vec<Val
         "jobs" => background::jobs(shell, args).map_err(|msg| Err(msg))?,
         "shuf" => list_utils::shuf(args).map_err(|msg| Err(msg))?,
         "head" => list_utils::head(args).map_err(|msg| Err(msg))?,
+        "find" => search::find(args).map_err(|msg| Err(msg))?,
         _ => return Err(Ok(())),
     };
     return Ok(output);

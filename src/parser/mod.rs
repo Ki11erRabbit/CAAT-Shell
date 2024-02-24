@@ -73,12 +73,12 @@ impl Expression {
         match self {
             Expression::Literal(literal) => literal.as_value(),
             Expression::Variable(string) => env.get(&string).unwrap().clone(),
-            Expression::Pipeline(pipeline) => pipeline.call(&[]),
+            Expression::Pipeline(pipeline) => pipeline.pipeline.call(&[]),
             Expression::Parenthesized(expression) => expression.as_value(env),
             Expression::HigherOrder(ho) => {
                 let mut ho = ho.clone();
                 ho.resolve_args_env(env);
-                Value::CAATFunction(Arc::new(ho))
+                Value::CAATFunction(Arc::new(ho.pipeline))
             },
             Expression::If(cond, then, else_) => {
                 let cond = cond.as_value(env);

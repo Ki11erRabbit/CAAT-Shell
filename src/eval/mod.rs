@@ -1,4 +1,4 @@
-use crate::{parser::{Expression, File, Pipeline, Statement}, shell::Shell};
+use crate::{parser::{Expression, File, Pipeline, PipelinePart, Redirect, Statement}, shell::Shell};
 use std::io::Write;
 use caat_rust::{Caat,Value};
 use regex::Regex;
@@ -94,7 +94,36 @@ fn eval_expression(shell: &mut Shell, expression: Expression) -> Result<Value,St
         }
         Expression::Pipeline(pipeline) => {
             //println!("Pipeline: {:?}", pipeline);
-            eval_pipeline(shell, &pipeline, None)
+            let result = eval_pipeline(shell, &pipeline.pipeline, None)?;
+            if let Some(redirect) = pipeline.redirect {
+                match redirect {
+                    Redirect::Input(_) => unimplemented!(),
+                    Redirect::Output(expr) => {
+                        let value = eval_expression(shell, *expr)?;
+                        match value {
+                            Value::String(string) => {
+                                let mut file = std::fs::File::create(string).map_err(|e| e.to_string())?;
+                                writeln!(file, "{}", format_value_file(&result)).unwrap();
+                            }
+                            _ => return Err(">: type error".to_string()),
+                        }
+                        return Ok(Value::Null);
+                    },
+                    Redirect::Append(expr) => {
+                        let value = eval_expression(shell, *expr)?;
+                        match value {
+                            Value::String(string) => {
+                                let mut file = std::fs::OpenOptions::new().append(true).create(true).open(string).map_err(|e| e.to_string())?;
+                                writeln!(file, "{}", format_value_file(&result)).unwrap();
+                            }
+                            _ => return Err(">>: type error".to_string()),
+                        }
+                        return Ok(Value::Null);
+                    },
+                }
+            }
+            
+            Ok(result)
         }
         Expression::Variable(variable) => {
             let env = shell.environment();
@@ -105,7 +134,7 @@ fn eval_expression(shell: &mut Shell, expression: Expression) -> Result<Value,St
         }
         Expression::HigherOrder(mut hocmd) => {
             hocmd.resolve_args(shell);
-            Ok(Value::CAATFunction(Arc::new(hocmd)))
+            Ok(Value::CAATFunction(Arc::new(hocmd.pipeline)))
         }
         Expression::If(cond, then, else_) => {
             match eval_expression(shell, *cond)? {
@@ -156,7 +185,7 @@ fn eval_expression(shell: &mut Shell, expression: Expression) -> Result<Value,St
     }
 }
 
-fn eval_pipeline(shell: &mut Shell, pipeline: &Pipeline, arg: Option<Value>) -> Result<Value, String> {
+fn eval_pipeline(shell: &mut Shell, pipeline: &PipelinePart, arg: Option<Value>) -> Result<Value, String> {
 
 
 
@@ -229,13 +258,17 @@ fn format_value(value: &Value) -> String {
                 
                 match value {
                     Value::List(_) => {
-                        current += 1;
-                        result.push(Vec::new());
+                        if result[current].len() > 0 {
+                            current += 1;
+                            result.push(Vec::new());
+                        }
                         result[current].extend_from_slice(&format_list(value));
                     },
                     Value::Map(_, _) => {
-                        current += 1;
-                        result.push(Vec::new());
+                        if result[current].len() > 0 {
+                            current += 1;
+                            result.push(Vec::new());
+                        }
                         result[current].extend_from_slice(&format_map(value));
                     }
                     _ => {
@@ -334,3 +367,70 @@ fn format_map(value: &Value) -> Vec<String> {
     }
 }
 
+fn format_value_file(value: &Value) -> String {
+    match value {
+        Value::Null => format!("()"),
+        Value::String(string) => format!("{}", string),
+        Value::List(list) => {
+            let mut result: Vec<Vec<String>> = vec![Vec::new()];
+            let mut current = 0;
+            for value in list.iter() {
+                
+                match value {
+                    Value::List(_) => {
+                        if result[current].len() > 0 {
+                            current += 1;
+                            result.push(Vec::new());
+                        }
+                        result[current].extend_from_slice(&format_list(value));
+                    },
+                    Value::Map(_, _) => {
+                        if result[current].len() > 0 {
+                            current += 1;
+                            result.push(Vec::new());
+                        }
+                        result[current].extend_from_slice(&format_map(value));
+                    }
+                    _ => {
+                        if result[current].len() > 0 {
+                            current += 1;
+                            result.push(Vec::new());
+                        }
+                        result[current].extend_from_slice(&vec![format_value_file(value)]);
+                    }
+                }
+            }
+            let mut longest = Vec::new();
+            for row in &result {
+                for (i, cell) in row.iter().enumerate() {
+                    if longest.len() <= i {
+                        longest.push(0)
+                    }
+                    if cell.chars().count() > longest[i] {
+                        longest[i] = cell.chars().count();
+                    }
+                    
+                }
+            }
+            let mut output = String::new();
+            for (r, row) in result.iter().enumerate() {
+                for (i, cell) in row.iter().enumerate() {
+                    output.push_str(cell);
+                    if i < row.len() - 1 {
+                        output.push_str(",");
+                    }
+                }
+                if r < result.len() - 1 {
+                    output.push_str("\n");
+                }
+            }
+            output
+        }
+        Value::Float(f) => format!("{}", f),
+        Value::Integer(i) => format!("{}", i),
+        Value::Boolean(b) => format!("{}", b),
+        Value::CAATFunction(_) => format!("<foreign function>"),
+        Value::Map(_,_) => format_map(value).join("  "),
+        Value::Failure(msg) => format!("Failure: {}", msg),
+    }
+}
