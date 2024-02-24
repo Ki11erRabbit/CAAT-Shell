@@ -73,7 +73,7 @@ fn eval(shell: &mut Shell, input: &mut dyn Iterator<Item = Statement>) -> Result
         }
         Some(Statement::FunctionDef(function)) => {
             let name = function.name.clone();
-            let function = crate::shell::function::Function::new(function.name, function.args, function.body);
+            let function = crate::shell::function::Function::new(&function.name, function.args, function.body);
             shell.set_function(name, function);
         }
         Some(Statement::Return(expression)) => {
@@ -142,6 +142,12 @@ fn eval_expression(shell: &mut Shell, expression: Expression) -> Result<Value,St
             Ok(result)
         }
         Expression::Variable(variable) => {
+            match shell.get_function(&variable) {
+                Some(function) => {
+                    return Ok(Value::CAATFunction(Arc::new(function)));
+                }
+                None => {}
+            }
             let env = shell.environment();
             Ok(env.get(&variable).ok_or(format!("{} not found in environment", variable))?.clone())
         }
@@ -197,7 +203,13 @@ fn eval_expression(shell: &mut Shell, expression: Expression) -> Result<Value,St
                 }
                 _ => Err("concat: type error".to_string()),
             }
+        },
+        Expression::Lambda(args, body) => {
+            let mut lambda = crate::shell::function::Function::new("lambda", args, body);
+            lambda.attach_shell(shell.clone());
+            return Ok(Value::CAATFunction(Arc::new(lambda)));
         }
+
     }
 }
 
@@ -226,13 +238,24 @@ fn eval_pipeline(shell: &mut Shell, pipeline: &PipelinePart, arg: Option<Value>)
         let value = match crate::builtins::run_builtin(Some(shell), name.as_str(), &args) {
             Ok(value) => Ok(value),
             Err(Ok(())) => {
-                let ff = caat_rust::ForeignFunction::new(&command.name);
-                //println!("{:?}", command.arguments_as_value(shell.environment()));
-                let return_value = match ff.call(&command.arguments_as_value(shell.environment())) {
-                    Value::Failure(msg) => return Err(msg),
-                    value => value,
-                };
-                Ok(return_value)
+                match shell.environment().get(name) {
+                    Some(Value::CAATFunction(f)) => {
+                        let value = f.call(&args);
+                        match value {
+                            Value::Failure(msg) => return Err(msg),
+                            value => Ok(value),
+                        }
+                    },
+                    _ => {
+                        let ff = caat_rust::ForeignFunction::new(&command.name);
+                        //println!("{:?}", command.arguments_as_value(shell.environment()));
+                        let return_value = match ff.call(&command.arguments_as_value(shell.environment())) {
+                            Value::Failure(msg) => return Err(msg),
+                            value => value,
+                        };
+                        Ok(return_value)
+                    }
+                }
             }
             Err(Err(msg)) => Err(msg),
         };

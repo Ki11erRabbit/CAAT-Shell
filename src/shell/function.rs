@@ -12,24 +12,35 @@ use super::Shell;
 pub struct Function {
     pub name: String,
     pub arguments: Vec<String>,
-    pub body: RefCell<File>,
+    pub body: File,
     pub shell: RefCell<Option<Shell>>,
 }
 
 impl Function {
-    pub fn new(name: String, arguments: Vec<String>, body: File) -> Self {
+    pub fn new(name: &str, arguments: Vec<String>, body: File) -> Self {
         Function {
-            name,
+            name: name.to_string(),
             arguments,
-            body: RefCell::new(body),
+            body: body,
             shell: RefCell::new(None),
         }
     }
     
     pub fn attach_shell(&mut self, shell: Shell) {
-        *self.shell.borrow_mut() = Some(shell);
+        let mut current = self.shell.borrow_mut();
+        match *current {
+            Some(ref mut current) => {
+                current.merge(shell);
+            }
+            None => {
+                *current = Some(shell);
+
+            }
+        }
     }
 }
+
+unsafe impl Sync for Function {}
 
 impl std::fmt::Display for Function {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -46,7 +57,7 @@ impl Caat for Function {
                     environment.set(arg.clone(), value.clone());
                 }
             }
-            let value = crate::eval::run_file(&mut shell, &mut self.body.borrow_mut());
+            let value = crate::eval::run_file(&mut shell, &mut self.body.clone());
              
             *self.shell.borrow_mut() = Some(shell);
             value

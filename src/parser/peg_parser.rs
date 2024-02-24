@@ -44,6 +44,7 @@ peg::parser!{
                     //"at" => Err("at not identifier"),
                     "function" => Err("function not identifier"),
                     "return" => Err("return not identifier"),
+                    "fn" => Err("fn not identifier"),
                     _ => Ok(Token::Identifier(match_str.to_string())),
                 }
             }
@@ -141,8 +142,13 @@ peg::parser!{
             = e1:(expression_terminals() / expression_nonterminals_right()) [' '|'\t']* concat() [' '|'\t']* e2:expression() {
             Expression::Concat(Box::new(e1), Box::new(e2))
             }
+        rule lambda() -> Expression
+            = "fn" [' '|'\t']* ['('] args:identifier() ** (comma() [' '|'\t']*) [')'] [' '|'\t']* ['{'] [' '|'\t'|'\r'|'\n']* body:file() [' '|'\t']* ['}'] {
+                let args = args.into_iter().map(|t| if let Token::Identifier(s) = t {s} else {unreachable!()}).collect();
+                Expression::Lambda(args, body)
+            }
         rule expression_terminals() -> Expression
-            = e:(variable_expression() / literal_expression() / higher_order() / pipeline_expression()) {e}
+            = e:(variable_expression() / literal_expression() / higher_order() / pipeline_expression() / lambda()) {e}
         rule expression_nonterminals_right() -> Expression
             = e:(if_expression() / paren_expression() / expression_terminals()) {e}
         rule expression_nonterminals() -> Expression

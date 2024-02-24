@@ -7,6 +7,7 @@ use caat_rust::{Caat, Value};
 pub use peg_parser::{parse_file, parse_interactive, parse_shebang};
 use std::fmt;
 use std::sync::Arc;
+use crate::shell::function::Function;
 
 use crate::shell::{Environment, Shell};
 
@@ -34,6 +35,18 @@ impl Iterator for File {
     }
 }
 
+impl fmt::Display for File {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut result = Ok(());
+        if let Some(statements) = &self.statements {
+            for statement in statements {
+                result = write!(f, "{}\n", statement);
+            }
+        }
+        result
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct Interactive {
     pub statement: Option<Statement>,
@@ -56,6 +69,19 @@ pub enum Statement {
     Blank,
 }
 
+impl fmt::Display for Statement {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Statement::Assignment(a) => write!(f, "{}", a),
+            Statement::Expression(e) => write!(f, "{}", e),
+            Statement::FunctionDef(fd) => write!(f, "{}", fd),
+            Statement::Return(e) => write!(f, "return {}", e),
+            Statement::Comment(c) => write!(f, "# {}", c),
+            Statement::Blank => write!(f, ""),
+        }
+    }
+}
+
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Assignment {
@@ -63,11 +89,23 @@ pub struct Assignment {
     pub value: Expression,
 }
 
+impl fmt::Display for Assignment {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} = {}", self.target, self.value)
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct FunctionDef {
     pub name: String,
     pub args: Vec<String>,
     pub body: File,
+}
+
+impl fmt::Display for FunctionDef {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "fn {}({}) {}", self.name, self.args.join(", "), self.body)
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -80,6 +118,7 @@ pub enum Expression {
     If(Box<Expression>, Box<Expression>, Box<Expression>),
     Access(Box<Expression>, Box<Expression>),
     Concat(Box<Expression>, Box<Expression>),
+    Lambda(Vec<String>, File),
 }
 
 impl Expression {
@@ -150,6 +189,12 @@ impl Expression {
                     (a, b) => Value::Failure(format!("Can't concatenate {} and {}", a, b)),
                 }
             }
+            Expression::Lambda(args, body) => {
+                let mut lambda = Function::new("lambda", args.to_vec(), body.clone());
+                lambda.attach_shell(Shell::with_environment(env.clone()));
+                return Value::CAATFunction(Arc::new(lambda));
+            }
+                    
         }
     }
 }
@@ -165,6 +210,11 @@ impl fmt::Display for Expression {
             Expression::If(cond, then, else_) => write!(f, "if {} then {} else {}", cond, then, else_),
             Expression::Access(thing, index) => write!(f, "{}[{}]", thing, index),
             Expression::Concat(a, b) => write!(f, "{} ++ {}", a, b),
+            Expression::Lambda(args, body) => {
+                write!(f, "fn ({})", args.join(", "))?;
+                write!(f, "{{ {} }}", body)
+            }
+                    
         }
     }
 }

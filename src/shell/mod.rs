@@ -21,6 +21,13 @@ impl Shell {
             functions: HashMap::new(),
         }
     }
+    pub fn with_environment(environment: Environment) -> Self {
+        Shell {
+            environment,
+            job_manager: JobManager::new(),
+            functions: HashMap::new(),
+        }
+    }
     pub fn environment(&self) -> &Environment {
         &self.environment
     }
@@ -45,6 +52,13 @@ impl Shell {
     }
     pub fn set_function(&mut self, name: String, function: function::Function) {
         self.functions.insert(name, function);
+    }
+    pub fn merge(&mut self, other: Shell) {
+        self.environment.global.extend(other.environment.global);
+        for scope in other.environment.scoped {
+            self.environment.scoped.push(scope);
+        }
+        self.functions.extend(other.functions);
     }
 }
 
