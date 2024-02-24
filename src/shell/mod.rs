@@ -57,11 +57,16 @@ pub struct Environment {
 
 
 impl Environment {
+    pub fn create_global() -> HashMap<String, Value> {
+        let mut global = HashMap::new();
+        global.insert("HOME".to_string(), Value::String(env!("HOME").to_string()));
+        global
+    }
     pub fn new() -> Self {
-        let global = HashMap::new();
+        let global = Environment::create_global();
         Environment {
             global,
-            scoped: vec![],
+            scoped: vec![HashMap::new()],
         }
     }
     pub fn get(&self, name: &str) -> Option<&Value> {

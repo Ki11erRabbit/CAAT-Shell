@@ -1,6 +1,6 @@
 use crate::{parser::{Expression, File, Pipeline, PipelinePart, Redirect, Statement}, shell::Shell};
 use std::io::Write;
-use caat_rust::{Caat,Value};
+use caat_rust::{Caat, ForeignFunction, Value};
 use regex::Regex;
 use std::sync::Arc;
 
@@ -40,13 +40,15 @@ pub fn repl(shell: &mut Shell) {
 pub fn run_file(shell: &mut Shell, file: &mut File) -> Value {
     loop {
         match eval(shell, file) {
-            Ok((true, value)) => {
-                return value;
+            Ok((true, _)) => {
+                //TODO: add code that enables and disables this
+                //println!("{}", format_value(&value));
             }
             Ok((false, value)) => {
                 return value;
             }
             Err(msg) => {
+                println!("{}", msg);
                 return Value::Failure(msg);
             }
         }
@@ -56,10 +58,11 @@ pub fn run_file(shell: &mut Shell, file: &mut File) -> Value {
 
 
 fn eval(shell: &mut Shell, input: &mut dyn Iterator<Item = Statement>) -> Result<(bool, Value), String> {
-    match input.next() {
+    let next = input.next();
+    match next {
         Some(Statement::Assignment(assignment)) => {
-            //println!("Assignment: {:?} = {:?}", assignment.target, assignment.value);
             let value = eval_expression(shell, assignment.value)?;
+            //eprintln!("Assignment: {:?} = {:?}", assignment.target, value);
             let env = shell.environment_mut();
             env.set(assignment.target, value);
         }
@@ -76,6 +79,19 @@ fn eval(shell: &mut Shell, input: &mut dyn Iterator<Item = Statement>) -> Result
         Some(Statement::Return(expression)) => {
             let value = eval_expression(shell, expression)?;
             return Ok((false, value));
+        }
+        Some(Statement::Blank) => {}
+        Some(Statement::Comment(comt)) => {
+            if comt.starts_with("!") {
+                let comt = comt.chars().skip(1).collect::<String>();
+                let ff = ForeignFunction::new(&comt);
+                let value = ff.call(&[]);
+                match value {
+                    Value::Failure(msg) => return Err(msg),
+                    _ => {}
+                }
+                return Ok((false, value));
+            }
         }
         None => {
             return Ok((false, Value::Null))
@@ -127,7 +143,7 @@ fn eval_expression(shell: &mut Shell, expression: Expression) -> Result<Value,St
         }
         Expression::Variable(variable) => {
             let env = shell.environment();
-            Ok(env.get(&variable).unwrap().clone())
+            Ok(env.get(&variable).ok_or(format!("{} not found in environment", variable))?.clone())
         }
         Expression::Parenthesized(expression) => {
             eval_expression(shell, *expression)

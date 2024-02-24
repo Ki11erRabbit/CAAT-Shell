@@ -4,7 +4,7 @@
 mod peg_parser;
 
 use caat_rust::{Caat, Value};
-pub use peg_parser::{parse_file, parse_interactive};
+pub use peg_parser::{parse_file, parse_interactive, parse_shebang};
 use std::fmt;
 use std::sync::Arc;
 
@@ -12,13 +12,25 @@ use crate::shell::{Environment, Shell};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct File {
-    pub statements: Vec<Statement>,
+    pub statements: Option<Vec<Statement>>,
+}
+
+impl File {
+    pub fn new(statements: Vec<Statement>) -> File {
+        File {
+            statements: Some(statements),
+        }
+    }
 }
 
 impl Iterator for File {
     type Item = Statement;
     fn next(&mut self) -> Option<Self::Item> {
-        self.statements.pop()
+        let statements = self.statements.take();
+        let mut iter = statements.unwrap().into_iter();
+        let next = iter.next();
+        self.statements = Some(iter.collect());
+        next
     }
 }
 
@@ -40,6 +52,8 @@ pub enum Statement {
     Expression(Expression),
     FunctionDef(FunctionDef),
     Return(Expression),
+    Comment(String),
+    Blank,
 }
 
 
@@ -72,7 +86,7 @@ impl Expression {
     pub fn as_value(&self, env: &Environment) -> Value {
         match self {
             Expression::Literal(literal) => literal.as_value(),
-            Expression::Variable(string) => env.get(&string).unwrap().clone(),
+            Expression::Variable(string) => env.get(&string).map_or(Value::Failure(format!("{} not found in environment", string)), |v| v.clone()),
             Expression::Pipeline(pipeline) => pipeline.pipeline.call(&[]),
             Expression::Parenthesized(expression) => expression.as_value(env),
             Expression::HigherOrder(ho) => {

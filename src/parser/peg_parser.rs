@@ -209,19 +209,28 @@ peg::parser!{
             = f:function_def() {Statement::FunctionDef(f)}
         rule return_statement() -> Statement
             = "return" [' '|'\t']* e:expression() {Statement::Return(e)}
+        rule comment() -> Statement
+            = ['#'] c:$([^ '\n']+) ['\r']?['\n']* {Statement::Comment(c.to_string())}
+        rule blank() -> Statement
+            = [' '|'\t']* ['\r']?['\n']* {Statement::Blank}
         rule statement() -> Statement
-            = s:(assignment_statement() / expression_statement() / function_def_statement() / return_statement()) {s}
+            = [' '|'\t']* s:(assignment_statement() / expression_statement() / function_def_statement() / return_statement() / comment() / blank()) {s}
         pub rule interactive() -> Interactive
             = s:statement() ![_]{Interactive { statement: Some(s) }}
         pub rule file() -> File
-            = s:statement() ** (['\r']?['\n']+) ['\r']?['\n']+ {File { statements: s }}
+            = s:statement() ** (['\r']?['\n']+) ['\r']?['\n']* {
+                let mut statements = s.into_iter().filter(|s| match s {Statement::Blank => false, _ => true}).collect();
+                File::new(statements)
+            }
+        pub rule shebang() -> String
+            = "#!" s:$([^ '\n']+)  ['\r']?['\n']* [_]* ![_] {s.to_string()}
     }
     
 }
 
 pub use parser::file as parse_file;
 pub use parser::interactive as parse_interactive;
-
+pub use parser::shebang as parse_shebang;
 
 #[cfg(test)]
 mod tests {
