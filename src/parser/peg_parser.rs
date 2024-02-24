@@ -1,5 +1,5 @@
 
-use crate::parser::{Literal, Expression, Command, Pipeline, Operator, Statement, Assignment, Interactive, File, FunctionDef};
+use crate::parser::{Literal, Expression, Command, Pipeline, Operator, Statement, Assignment, Interactive, File, FunctionDef, Redirect, PipelinePart};
 
 #[derive(Debug, PartialEq)]
 pub enum Token {
@@ -21,6 +21,10 @@ pub enum Token {
     Colon,
     ParenOpen,
     ParenClose,
+    Concat,
+    InputRedirect,
+    OutputRedirect,
+    AppendRedirect,
 }
 
 
@@ -36,8 +40,8 @@ peg::parser!{
                     "if" => Err("if not identifier"),
                     "then" => Err("then not identifier"),
                     "else" => Err("else not identifier"),
-                    "access" => Err("access not identifier"),
-                    "at" => Err("at not identifier"),
+                    //"access" => Err("access not identifier"),
+                    //"at" => Err("at not identifier"),
                     "function" => Err("function not identifier"),
                     "return" => Err("return not identifier"),
                     _ => Ok(Token::Identifier(match_str.to_string())),
@@ -77,6 +81,20 @@ peg::parser!{
             = quiet!{")"} {Token::ParenClose}
         rule dollar() -> Token
             = quiet!{"$"} {Token::Dollar}
+        rule concat() -> Token 
+            = quiet!{"++"} {Token::Concat}
+        rule input_redirect() -> Token
+            = quiet!{"<"} {Token::InputRedirect}
+        rule output_redirect() -> Token
+            = quiet!{">"} {Token::OutputRedirect}
+        rule append_redirect() -> Token
+            = quiet!{">>"} {Token::AppendRedirect}
+        rule redirect_input() -> Redirect
+            = input_redirect() [' '|'\t']* e:expression() {Redirect::Input(Box::new(e))}
+        rule redirect_output() -> Redirect
+            = output_redirect() [' '|'\t']* e:expression() {Redirect::Output(Box::new(e))}
+        rule redirect_append() -> Redirect
+            = append_redirect() [' '|'\t']* e:expression() {Redirect::Append(Box::new(e))}
         rule list() -> Literal
             = bracket_open() [' '|'\t']* l:literal() ** (comma() [' '|'\t']*) bracket_close() {Literal::List(l)}
         rule pair() -> Vec<(String, Literal)>
@@ -114,12 +132,23 @@ peg::parser!{
             = "if" [' '|'\t'|'\n']* cond:expression() [' '|'\t'|'\n']* "then" [' '|'\t'|'\n']* then:expression() [' '|'\t'|'\n']* "else" [' '|'\t'|'\n']* else_:expression() {
             Expression::If(Box::new(cond), Box::new(then), Box::new(else_))
             }
+        #[cache_left_rec]
         rule access_expression() -> Expression 
-            = "access" [' '|'\t']* thing:expression() [' '|'\t']* "at" [' '|'\t']* index:expression() {
+            = thing:(expression_nonterminals_right() / expression_terminals() / concat_expression() /access_expression()) [' '|'\t']* bracket_open() [' '|'\t']* index:expression() [' '|'\t']* bracket_close() {
                 Expression::Access(Box::new(thing), Box::new(index))
             }
+        rule concat_expression() -> Expression
+            = e1:(expression_terminals() / expression_nonterminals_right()) [' '|'\t']* concat() [' '|'\t']* e2:expression() {
+            Expression::Concat(Box::new(e1), Box::new(e2))
+            }
+        rule expression_terminals() -> Expression
+            = e:(variable_expression() / literal_expression() / higher_order() / pipeline_expression()) {e}
+        rule expression_nonterminals_right() -> Expression
+            = e:(if_expression() / paren_expression() / expression_terminals()) {e}
+        rule expression_nonterminals() -> Expression
+            = e:(if_expression() / access_expression() / concat_expression() / paren_expression() / expression_terminals()) {e}
         pub rule expression() -> Expression
-            = e:(if_expression() / pipeline_expression() / access_expression() / variable_expression() / literal_expression() / paren_expression() / higher_order()) {e}
+            = e:(expression_nonterminals() / expression_terminals()) {e}
         pub rule command() -> Command
             = name:identifier() [' '|'\t']+ args:expression() ** ([' '|'\t']+) {
                 if let Token::Identifier(name) = name {
@@ -145,11 +174,14 @@ peg::parser!{
                 }
                             
             }
-        pub rule pipeline() -> Pipeline
-            = c:command() [' '|'\t']* o:operator() [' '|'\t']* n:pipeline() {
-            Pipeline{command: c, operator: Some(o), next: Some(Box::new(n))}
+        pub rule pipeline_part() -> PipelinePart
+            = c:command() [' '|'\t']* o:operator() [' '|'\t']* n:pipeline_part() {
+            PipelinePart{command: c, operator: Some(o), next: Some(Box::new(n))}
             }
-            / c:command() {Pipeline{command: c, operator: None, next: None}}
+            / c:command() {PipelinePart{command: c, operator: None, next: None}}
+        pub rule pipeline() -> Pipeline
+            = p:pipeline_part() {Pipeline {pipeline: p, redirect: None}}
+            / p:pipeline_part() [' '|'\t']* r:(redirect_input() / redirect_output() / redirect_append()) {Pipeline {pipeline: p, redirect: Some(r)}}
         rule pipeline_expression() -> Expression
             = p:pipeline() {Expression::Pipeline(p)}
         rule expression_statement() -> Statement

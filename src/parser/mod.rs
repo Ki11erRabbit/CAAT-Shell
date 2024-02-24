@@ -65,6 +65,7 @@ pub enum Expression {
     HigherOrder(Pipeline),
     If(Box<Expression>, Box<Expression>, Box<Expression>),
     Access(Box<Expression>, Box<Expression>),
+    Concat(Box<Expression>, Box<Expression>),
 }
 
 impl Expression {
@@ -118,6 +119,22 @@ impl Expression {
                     },
                     _ => Value::Failure(format!("Can't access {} with index {}", thing, index)),
                 }
+            },
+            Expression::Concat(a, b) => {
+                let a = a.as_value(env);
+                let b = b.as_value(env);
+                match (a, b) {
+                    (Value::List(a), Value::List(b)) => {
+                        let mut a = a.to_vec();
+                        a.extend_from_slice(&b);
+                        Value::List(a.into())
+                    },
+                    (Value::String(mut a), Value::String(b)) => {
+                        a.push_str(&b);
+                        Value::String(a)
+                    },
+                    (a, b) => Value::Failure(format!("Can't concatenate {} and {}", a, b)),
+                }
             }
         }
     }
@@ -132,7 +149,8 @@ impl fmt::Display for Expression {
             Expression::Parenthesized(e) => write!(f, "({})", e),
             Expression::HigherOrder(h) => write!(f, "{}", h),
             Expression::If(cond, then, else_) => write!(f, "if {} then {} else {}", cond, then, else_),
-            Expression::Access(thing, index) => write!(f, "access {} at {}", thing, index),
+            Expression::Access(thing, index) => write!(f, "{}[{}]", thing, index),
+            Expression::Concat(a, b) => write!(f, "{} ++ {}", a, b),
         }
     }
 }
@@ -199,14 +217,56 @@ impl fmt::Display for Literal {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Pipeline {
-    pub command: Command,
-    pub operator: Option<Operator>,
-    pub next: Option<Box<Pipeline>>,
+    pub pipeline: PipelinePart,
+    pub redirect: Option<Redirect>,
 }
 
 impl Pipeline {
-    pub fn new(command: Command) -> Pipeline {
-        Pipeline {
+    pub fn resolve_args(&mut self, shell: &Shell) {
+        self.pipeline.resolve_args(shell);
+    }
+    pub fn resolve_args_env(&mut self, env: &Environment) {
+        self.pipeline.resolve_args_env(env);
+    }
+}
+
+impl fmt::Display for Pipeline {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let result = write!(f, "{}", self.pipeline);
+        if let Some(redirect) = &self.redirect {
+            write!(f, " {}", redirect)?;
+        }
+        result
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum Redirect {
+    Input(Box<Expression>),
+    Output(Box<Expression>),
+    Append(Box<Expression>),
+}
+
+impl fmt::Display for Redirect {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Redirect::Input(s) => write!(f, "< {}", s),
+            Redirect::Output(s) => write!(f, "> {}", s),
+            Redirect::Append(s) => write!(f, ">> {}", s),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct PipelinePart {
+    pub command: Command,
+    pub operator: Option<Operator>,
+    pub next: Option<Box<PipelinePart>>,
+}
+
+impl PipelinePart {
+    pub fn new(command: Command) -> PipelinePart {
+        PipelinePart {
             command,
             operator: None,
             next: None,
@@ -227,7 +287,7 @@ impl Pipeline {
     }
 }
 
-impl Caat for Pipeline {
+impl Caat for PipelinePart {
     fn call(&self, args: &[Value]) -> Value {
         let ff = caat_rust::ForeignFunction::new(&self.command.name);
         let mut new_args = self.command.args.clone();
@@ -275,7 +335,7 @@ impl Caat for Pipeline {
     }
 }
 
-impl fmt::Display for Pipeline {
+impl fmt::Display for PipelinePart {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.command.name)?;
         for arg in &self.command.arguments {

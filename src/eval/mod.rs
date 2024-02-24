@@ -136,6 +136,22 @@ fn eval_expression(shell: &mut Shell, expression: Expression) -> Result<Value,St
                 }
                 _ => Err("access: type error".to_string()),
             }
+        },
+        Expression::Concat(a, b) => {
+            let a = eval_expression(shell, *a)?;
+            let b = eval_expression(shell, *b)?;
+            match (a, b) {
+                (Value::List(a), Value::List(b)) => {
+                    let mut a = a.to_vec();
+                    a.extend_from_slice(&b);
+                    Ok(Value::List(a.into()))
+                }
+                (Value::String(mut a), Value::String(b)) => {
+                    a.push_str(&b);
+                    Ok(Value::String(a))
+                }
+                _ => Err("concat: type error".to_string()),
+            }
         }
     }
 }
