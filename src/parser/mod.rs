@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use crate::shell::{Environment, Shell};
 
+#[derive(Debug, PartialEq, Clone)]
 pub struct File {
     pub statements: Vec<Statement>,
 }
@@ -37,6 +38,8 @@ impl Iterator for Interactive {
 pub enum Statement {
     Assignment(Assignment),
     Expression(Expression),
+    FunctionDef(FunctionDef),
+    Return(Expression),
 }
 
 
@@ -44,6 +47,13 @@ pub enum Statement {
 pub struct Assignment {
     pub target: String,
     pub value: Expression,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct FunctionDef {
+    pub name: String,
+    pub args: Vec<String>,
+    pub body: File,
 }
 
 #[derive(Debug, PartialEq, Clone)]

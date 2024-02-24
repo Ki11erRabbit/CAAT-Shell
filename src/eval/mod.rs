@@ -1,10 +1,8 @@
-use crate::{parser::{Expression, Pipeline, Statement}, shell::Shell};
+use crate::{parser::{Expression, File, Pipeline, Statement}, shell::Shell};
 use std::io::Write;
 use caat_rust::{Caat,Value};
 use regex::Regex;
 use std::sync::Arc;
-
-
 
 
 
@@ -26,19 +24,41 @@ pub fn repl(shell: &mut Shell) {
         };
         //eprintln!("{:?}", interactive);
         match eval(shell, &mut interactive) {
-            Ok(_) => {}
+            Ok((true, value)) => {
+                println!("{}", format_value(&value));
+            }
+            Ok((false, value)) => {
+                println!("{}", format_value(&value));
+                break;
+            }
             Err(msg) => println!("{}", msg),
         }
     }
 }
 
 
+pub fn run_file(shell: &mut Shell, file: &mut File) -> Value {
+    loop {
+        match eval(shell, file) {
+            Ok((true, value)) => {
+                return value;
+            }
+            Ok((false, value)) => {
+                return value;
+            }
+            Err(msg) => {
+                return Value::Failure(msg);
+            }
+        }
+    }
+}
 
 
-fn eval(shell: &mut Shell, input: &mut dyn Iterator<Item = Statement>) -> Result<(), String> {
+
+fn eval(shell: &mut Shell, input: &mut dyn Iterator<Item = Statement>) -> Result<(bool, Value), String> {
     match input.next() {
         Some(Statement::Assignment(assignment)) => {
-            println!("Assignment: {:?} = {:?}", assignment.target, assignment.value);
+            //println!("Assignment: {:?} = {:?}", assignment.target, assignment.value);
             let value = eval_expression(shell, assignment.value)?;
             let env = shell.environment_mut();
             env.set(assignment.target, value);
@@ -46,11 +66,22 @@ fn eval(shell: &mut Shell, input: &mut dyn Iterator<Item = Statement>) -> Result
         Some(Statement::Expression(expression)) => {
             //println!("Expression: {:?}", expression);
             let value = eval_expression(shell, expression)?;
-            println!("{}", format_value(&value));
+            return Ok((true, value));
         }
-        None => {}
+        Some(Statement::FunctionDef(function)) => {
+            let name = function.name.clone();
+            let function = crate::shell::function::Function::new(function.name, function.args, function.body);
+            shell.set_function(name, function);
+        }
+        Some(Statement::Return(expression)) => {
+            let value = eval_expression(shell, expression)?;
+            return Ok((false, value));
+        }
+        None => {
+            return Ok((false, Value::Null))
+        }
     }
-    Ok(())
+    Ok((true, Value::Null))
 }
 
 
@@ -111,7 +142,8 @@ fn eval_expression(shell: &mut Shell, expression: Expression) -> Result<Value,St
 
 fn eval_pipeline(shell: &mut Shell, pipeline: &Pipeline, arg: Option<Value>) -> Result<Value, String> {
 
-    //println!("Command: {:?}", pipeline);
+
+
     let command = &pipeline.command;
     let name = &command.name;
     let args: Vec<Value> = command.arguments_as_value(shell.environment());
@@ -124,19 +156,28 @@ fn eval_pipeline(shell: &mut Shell, pipeline: &Pipeline, arg: Option<Value>) -> 
         None => args,
     };
 
-    let value = match crate::builtins::run_builtin(Some(shell), name.as_str(), &args) {
-        Ok(value) => Ok(value),
-        Err(Ok(())) => {
-            let ff = caat_rust::ForeignFunction::new(&command.name);
-            //println!("{:?}", command.arguments_as_value(shell.environment()));
-            let return_value = match ff.call(&command.arguments_as_value(shell.environment())) {
-                Value::Failure(msg) => return Err(msg),
-                value => value,
-            };
-            Ok(return_value)
+    let value = if let Some(function) = shell.get_function(name) {
+        match function.call(&args) {
+            Value::Failure(msg) => Err(msg),
+            value => Ok(value),
         }
-        Err(Err(msg)) => Err(msg),
+    } else {
+        let value = match crate::builtins::run_builtin(Some(shell), name.as_str(), &args) {
+            Ok(value) => Ok(value),
+            Err(Ok(())) => {
+                let ff = caat_rust::ForeignFunction::new(&command.name);
+                //println!("{:?}", command.arguments_as_value(shell.environment()));
+                let return_value = match ff.call(&command.arguments_as_value(shell.environment())) {
+                    Value::Failure(msg) => return Err(msg),
+                    value => value,
+                };
+                Ok(return_value)
+            }
+            Err(Err(msg)) => Err(msg),
+        };
+        value
     };
+
     
     match (&pipeline.operator, &pipeline.next) {
         (Some(crate::parser::Operator::Pipe), Some(next)) => {

@@ -1,5 +1,5 @@
 
-use crate::parser::{Literal, Expression, Command, Pipeline, Operator, Statement, Assignment, Interactive, File};
+use crate::parser::{Literal, Expression, Command, Pipeline, Operator, Statement, Assignment, Interactive, File, FunctionDef};
 
 #[derive(Debug, PartialEq)]
 pub enum Token {
@@ -38,6 +38,8 @@ peg::parser!{
                     "else" => Err("else not identifier"),
                     "access" => Err("access not identifier"),
                     "at" => Err("at not identifier"),
+                    "function" => Err("function not identifier"),
+                    "return" => Err("return not identifier"),
                     _ => Ok(Token::Identifier(match_str.to_string())),
                 }
             }
@@ -162,8 +164,21 @@ peg::parser!{
             }
         rule assignment_statement() -> Statement
             = a:assignment() {Statement::Assignment(a)}
+        rule function_def() -> FunctionDef
+            = "function" [' '|'\t']* id:identifier() [' '|'\t']* ['('] [' '|'\t']* args:identifier() ** (comma() [' '|'\t']*) [' '|'\t']* [')'] [' '|'\t']* ['{'] [' '|'\t'|'\r'|'\n']* body:file() [' '|'\t']* ['}'] {
+                if let Token::Identifier(name) = id {
+                    let args = args.into_iter().map(|t| if let Token::Identifier(s) = t {s} else {unreachable!()}).collect();
+                    FunctionDef { name: name, args: args, body: body }
+                } else {
+                    unreachable!()
+                }
+            }
+        rule function_def_statement() -> Statement
+            = f:function_def() {Statement::FunctionDef(f)}
+        rule return_statement() -> Statement
+            = "return" [' '|'\t']* e:expression() {Statement::Return(e)}
         rule statement() -> Statement
-            = s:(assignment_statement() / expression_statement()) {s}
+            = s:(assignment_statement() / expression_statement() / function_def_statement() / return_statement()) {s}
         pub rule interactive() -> Interactive
             = s:statement() ![_]{Interactive { statement: Some(s) }}
         pub rule file() -> File

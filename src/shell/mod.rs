@@ -3,10 +3,13 @@ use caat_rust::Value;
 use job_manager::JobManager;
 
 pub mod job_manager;
+pub mod function;
 
+#[derive(Debug, Clone)]
 pub struct Shell {
     environment: Environment,
     job_manager: JobManager,
+    functions: HashMap<String, function::Function>,
 }
 
 
@@ -15,6 +18,7 @@ impl Shell {
         Shell {
             environment: Environment::new(),
             job_manager: JobManager::new(),
+            functions: HashMap::new(),
         }
     }
     pub fn environment(&self) -> &Environment {
@@ -29,10 +33,23 @@ impl Shell {
     pub fn job_manager_mut(&mut self) -> &mut JobManager {
         &mut self.job_manager
     }
+    pub fn get_function(&self, name: &str) -> Option<function::Function> {
+        match self.functions.get(name) {
+            Some(function) => {
+                let mut function = function.clone();
+                function.attach_shell(self.clone());
+                Some(function)
+            }
+            None => None,
+        }
+    }
+    pub fn set_function(&mut self, name: String, function: function::Function) {
+        self.functions.insert(name, function);
+    }
 }
 
 
-
+#[derive(Debug, Clone)]
 pub struct Environment {
     global: HashMap<String, Value>,
     scoped: Vec<HashMap<String, Value>>,

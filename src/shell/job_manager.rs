@@ -1,14 +1,26 @@
 use caat_rust::Value;
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 
-
+#[derive(Debug)]
 pub struct Job {
     command: String,
     id: i64,
-    handle: std::thread::JoinHandle<Value>,
+    handle: Arc<Mutex<Option<std::thread::JoinHandle<Value>>>>,
 }
 
+impl Clone for Job {
+    fn clone(&self) -> Self {
+        Job {
+            command: self.command.clone(),
+            id: self.id,
+            handle: self.handle.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct JobManager {
     jobs: Vec<Option<Job>>,
     next_id: Option<i64>,
@@ -54,7 +66,7 @@ impl JobManager {
         self.jobs.push(Some(Job {
             command: command.clone(),
             id,
-            handle,
+            handle: Arc::new(Mutex::new(Some(handle))),
         }));
         self.next_id = Some(id + 1);
         let mut output = HashMap::new();
@@ -91,7 +103,27 @@ impl JobManager {
         };
         if let Some(job) = job.take() {
             self.next_id = None;
-            Ok(job.handle.join().map_err(|_| "join: thread panicked".to_string())?)
+            let handle = job.handle.clone();
+            drop(job);
+            loop {
+                match handle.try_lock() {
+                    Ok(mut handle) => {
+                        let handle = handle.take().unwrap();
+                        let value = handle.join().map_err(|_| "join: thread panicked".to_string())?;
+                        self.next_id = Some(id);
+
+                        return Ok(value);
+                    },
+                    Err(std::sync::TryLockError::WouldBlock) => {
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                    },
+                    Err(_) => {
+                        return Err("join: thread panicked".to_string());
+                    },
+                                    
+                }
+            }
+            //Ok(job.handle.join().map_err(|_| "join: thread panicked".to_string())?)
         } else {
             return Err("join: no job with that id".to_string());
         }
