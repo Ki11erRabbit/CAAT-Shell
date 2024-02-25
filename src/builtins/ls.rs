@@ -30,6 +30,19 @@ impl Ls {
                         "-l" => self.show_long = true,
                         _ => self.path = Some(s.to_string()),
                     }
+                },
+                Value::Map(map, _) => {
+                    if let Some(s) = map.get("type") {
+                        if let Value::String(s) = s {
+                            if s == "dir_entry" {
+                                if let Some(s) = map.get("full_path") {
+                                    if let Value::String(s) = s {
+                                        self.path = Some(s.to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 _ => {}
             }
