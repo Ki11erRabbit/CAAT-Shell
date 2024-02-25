@@ -91,6 +91,34 @@ pub fn fold(args: &Vec<Value>) -> Result<Value, String> {
     Ok(acc)
 }
 
+pub fn concat(args: &Vec<Value>) -> Result<Value, String> {
+    let mut output = Vec::new();
+    for arg in args.iter() {
+        match arg {
+            Value::List(list) => output.extend_from_slice(&list),
+            _ => return Err("concat: expected list".to_string()),
+        }
+    }
+    Ok(Value::List(output.into()))
+}
+
+pub fn filter(args: &Vec<Value>) -> Result<Value, String> {
+    let list = find_list(args)?;
+    let function = find_function(args)?;
+    let mut output = Vec::new();
+    if let Value::List(list) = list {
+        if let Value::CAATFunction(function) = function {
+            for value in list.iter() {
+                let result = function.call(&[value.clone()]);
+                if let Value::Boolean(true) = result {
+                    output.push(value.clone());
+                }
+            }
+        }
+    }
+    Ok(Value::List(output.into()))
+}
+
 
 
 pub fn shuf(args: &Vec<Value>) -> Result<Value,String> {

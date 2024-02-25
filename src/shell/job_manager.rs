@@ -129,11 +129,16 @@ impl JobManager {
         }
     }
     
-    pub fn jobs(&self, args: &Vec<Value>) -> Value {
-        let mut output = Vec::new();
+    pub fn jobs(&self, _args: &Vec<Value>) -> Value {
+        let mut output: Vec<Value> = Vec::new();
         for job in self.jobs.iter() {
             if let Some(job) = job {
-                output.push(Value::List(vec![Value::Integer(job.id), Value::String(job.command.clone())].into()));
+                let mut map = HashMap::new();
+                map.insert("type".to_string(), Value::String("job".to_string()));
+                map.insert("id".to_string(), Value::Integer(job.id));
+                map.insert("command".to_string(), Value::String(job.command.clone()));
+                let format = String::from("{id} {command}");
+                output.push(Value::Map(map,Some(format)));
             }
         }
         return Value::List(output.into());

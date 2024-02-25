@@ -7,6 +7,7 @@ mod ls;
 mod background;
 mod list_utils;
 mod search;
+mod numbers;
 
 
 
@@ -21,11 +22,17 @@ pub fn run_builtin(shell: Option<&mut Shell>, command_name: &str, args: &Vec<Val
         "jobs" => background::jobs(shell, args).map_err(|msg| Err(msg))?,
         "map" => list_utils::map(args).map_err(|msg| Err(msg))?,
         "fold" => list_utils::fold(args).map_err(|msg| Err(msg))?,
+        "filter" => list_utils::filter(args).map_err(|msg| Err(msg))?,
+        "concat" => list_utils::concat(args).map_err(|msg| Err(msg))?,
         "shuf" => list_utils::shuf(args).map_err(|msg| Err(msg))?,
         "head" => list_utils::head(args).map_err(|msg| Err(msg))?,
         "tail" => list_utils::tail(args).map_err(|msg| Err(msg))?,
         "rest" => list_utils::rest(args).map_err(|msg| Err(msg))?,
         "find" => search::find(args).map_err(|msg| Err(msg))?,
+        "add" => numbers::add(args).map_err(|msg| Err(msg))?,
+        "sub" => numbers::sub(args).map_err(|msg| Err(msg))?,
+        "mul" => numbers::mult(args).map_err(|msg| Err(msg))?,
+        "div" => numbers::div(args).map_err(|msg| Err(msg))?,
         _ => return Err(Ok(())),
     };
     return Ok(output);
