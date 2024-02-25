@@ -39,7 +39,6 @@ pub fn map(args: &Vec<Value>) -> Result<Value,String> {
     let mut output = Vec::new();
     for value in list.iter() {
         let result = function.call(&vec![value.clone()]);
-        eprintln!("result: {:#?}", result);
         output.push(result);
     }
    
