@@ -1,38 +1,62 @@
-use crate::{parser::{Expression, File, Pipeline, PipelinePart, Redirect, Statement}, shell::Shell};
+use crate::{parser::{Expression, File, PipelinePart, Redirect, Statement}, shell::Shell};
 use std::io::Write;
 use caat_rust::{Caat, ForeignFunction, Value};
 use regex::Regex;
 use std::sync::Arc;
+use rustyline::{self,Editor, history, config, error::ReadlineError};
 
+
+fn create_rustyline() -> Editor<(),history::DefaultHistory> {
+    let config = config::Builder::new()
+        .behavior(config::Behavior::PreferTerm)
+        .auto_add_history(true)
+        .bell_style(config::BellStyle::Audible)
+        .completion_type(config::CompletionType::List)
+        .build();
+    let readline = Editor::with_config(config).unwrap();
+    readline
+}
 
 
 
 pub fn repl(shell: &mut Shell) {
+    let mut readline = create_rustyline();
     loop {
-        print!("> ");
-        std::io::stdout().flush().unwrap();
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input).unwrap();
-        input = input.trim().to_string();
-
-        let mut interactive = match crate::parser::parse_interactive(&input) {
-            Ok(i) => i,
-            Err(msg) => {
-                println!("{}", msg);
-                continue;
-            }
-        };
-        //eprintln!("{:?}", interactive);
-        match eval(shell, &mut interactive) {
-            Ok((true, value)) => {
-                println!("{}", format_value(&value));
-            }
-            Ok((false, value)) => {
-                println!("{}", format_value(&value));
+        match readline.readline("> ") {
+            Err(ReadlineError::Interrupted) => continue,
+            Err(ReadlineError::Eof) => break,
+            Err(err) => {
+                println!("Error: {:?}", err);
                 break;
             }
-            Err(msg) => println!("{}", msg),
+            Ok(line) => {
+                let input = line.trim().to_string();
+
+                let mut interactive = match crate::parser::parse_interactive(&input) {
+                    Ok(i) => i,
+                    Err(msg) => {
+                        println!("{}", msg);
+                        continue;
+                    }
+                };
+                //eprintln!("{:?}", interactive);
+                match eval(shell, &mut interactive) {
+                    Ok((true, value)) => {
+                        println!("{}", format_value(&value));
+                    }
+                    Ok((false, value)) => {
+                        println!("{}", format_value(&value));
+                        break;
+                    }
+                    Err(msg) => println!("{}", msg),
+                }
+
+            }
         }
+        /*print!("> ");
+        std::io::stdout().flush().unwrap();
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input).unwrap();*/
     }
 }
 

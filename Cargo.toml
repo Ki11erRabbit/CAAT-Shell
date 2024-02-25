@@ -11,3 +11,5 @@ peg = "0.8.2"
 chrono = "0.4.34"
 regex = "1.10.3"
 rand = "0.8.5"
+rustyline = "13.0.0"
+
