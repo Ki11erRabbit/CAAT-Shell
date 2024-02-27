@@ -1,3 +1,5 @@
+#!/home/ki11errabbit/.cargo/bin/caat_shell
+
 widepapers = $HOME ++ "/Pictures/Wallpapers/Widepapers"
 tallpapers = $HOME ++ "/Pictures/Wallpapers/Tallpapers"
 

@@ -13,14 +13,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>>  {
         let file = std::fs::read_to_string(&args[1])?;
         match parse_shebang(&file) {
             Ok(shebang) => {
-                let mut command = std::process::Command::new(shebang);
-                command.arg(&args[1]);
-                let status = command.status()?;
-                if !status.success() {
-                    eprintln!("error: failed to execute shebang");
-                    std::process::exit(1);
+                if !shebang.contains("caat_shell") {
+                    let mut command = std::process::Command::new(shebang);
+                    command.arg(&args[1]);
+                    let status = command.status()?;
+                    if !status.success() {
+                        eprintln!("error: failed to execute shebang");
+                        std::process::exit(1);
+                    }
+                    return Ok(());
+
                 }
-                return Ok(());
             }
             Err(e) => {
                 eprintln!("error: {}", e);

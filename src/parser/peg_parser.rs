@@ -216,9 +216,9 @@ peg::parser!{
         rule return_statement() -> Statement
             = "return" [' '|'\t']* e:expression() {Statement::Return(e)}
         rule comment() -> Statement
-            = ['#'] c:$([^ '\n']+) ['\r']?['\n']* {Statement::Comment(c.to_string())}
+            = ['#'] c:$([^ '\r'|'\n']+) {Statement::Comment(c.to_string())}
         rule blank() -> Statement
-            = [' '|'\t']* ['\r']?['\n']* {Statement::Blank}
+            = [' '|'\t']* ['\r']?['\n']+ {Statement::Blank}
         rule statement() -> Statement
             = [' '|'\t']* s:(assignment_statement() / expression_statement() / function_def_statement() / return_statement() / comment() / blank()) {s}
         pub rule interactive() -> Interactive
