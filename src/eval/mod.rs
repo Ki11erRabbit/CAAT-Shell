@@ -105,8 +105,7 @@ fn eval(shell: &mut Shell, input: &mut dyn Iterator<Item = Statement>) -> Result
             return Ok((false, value));
         }
         Some(Statement::Blank) => {}
-        Some(Statement::Comment(comt)) => {
-        }
+        Some(Statement::Comment(_)) => {}
         None => {
             return Ok((false, Value::Null))
         }
