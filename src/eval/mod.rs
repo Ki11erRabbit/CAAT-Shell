@@ -106,16 +106,6 @@ fn eval(shell: &mut Shell, input: &mut dyn Iterator<Item = Statement>) -> Result
         }
         Some(Statement::Blank) => {}
         Some(Statement::Comment(comt)) => {
-            if comt.starts_with("!") {
-                let comt = comt.chars().skip(1).collect::<String>();
-                let ff = ForeignFunction::new(&comt);
-                let value = ff.call(&[]);
-                match value {
-                    Value::Failure(msg) => return Err(msg),
-                    _ => {}
-                }
-                return Ok((false, value));
-            }
         }
         None => {
             return Ok((false, Value::Null))
