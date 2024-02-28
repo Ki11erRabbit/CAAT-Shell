@@ -15,6 +15,7 @@ mod strings;
 
 pub fn run_builtin(shell: Option<Arc<RwLock<Shell>>>, command_name: &str, args: &Vec<Value>) -> Result<Value,Result<(),String>> {
     let output = match command_name {
+        "args" => get_args(),
         "trace" => echo::trace(args),
         "echo" => echo::echo(args), 
         "cd" => cd::cd(args).map_err(|msg| Err(msg))?,
@@ -41,4 +42,13 @@ pub fn run_builtin(shell: Option<Arc<RwLock<Shell>>>, command_name: &str, args: 
         _ => return Err(Ok(())),
     };
     return Ok(output);
+}
+
+fn get_args() -> Value {
+    let args = caat_rust::args();
+    let mut output = Vec::new();
+    for arg in args {
+        output.push(arg);
+    }
+    return Value::List(output.into());
 }
