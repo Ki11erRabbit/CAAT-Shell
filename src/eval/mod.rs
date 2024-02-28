@@ -61,6 +61,28 @@ pub fn repl(shell: Arc<RwLock<Shell>>) {
     }
 }
 
+fn parse_file(shell: Arc<RwLock<Shell>>, file_path: &str) -> Result<Value, String> {
+    let file = std::fs::read_to_string(file_path).map_err(|e| e.to_string())?;
+    match crate::parser::parse_shebang(&file) {
+        Ok(shebang) => {
+            //eprintln!("shebang: {}", shebang);
+                let mut command = std::process::Command::new(shebang);
+                command.arg(file_path);
+                let status = command.status().map_err(|e| e.to_string())?;
+                return Ok(Value::Integer(status.code().unwrap() as i64))
+                        
+                        
+        }
+        Err(e) => {
+            eprintln!("error: {}", e);
+        }
+    }
+
+    //eprintln!("file: {}", file);
+    let mut file = crate::parser::parse_file(&file).map_err(|e| e.to_string())?;
+
+    Ok(run_file(shell, &mut file))
+}
 
 pub fn run_file(shell: Arc<RwLock<Shell>>, file: &mut File) -> Value {
     loop {
@@ -302,7 +324,10 @@ fn eval_pipeline(shell: Arc<RwLock<Shell>>, pipeline: &PipelinePart, arg: Option
                         //println!("{:?}", command.arguments_as_value(shell.environment()));
                         drop(borrowed_shell);
                         let return_value = match ff.call(&command.arguments_as_value(shell.clone())) {
-                            Value::Failure(msg) => return Err(msg),
+                            Value::Failure(msg) => {
+                                match 
+                                return Err(msg);
+                            },
                             value => value,
                         };
                         Ok(return_value)

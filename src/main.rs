@@ -1,4 +1,4 @@
-use parser::parse_shebang;
+use parser::{parse_shebang, File};
 use shell::Shell;
 use std::sync::{Arc, RwLock};
 
@@ -14,36 +14,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>>  {
     //eprintln!("args: {:?}", args);
     //eprintln!("args.len(): {}", args.len());
     if args.len() > 1 {
-        //eprintln!("args[1]: {}", args[1]);
-        let file = std::fs::read_to_string(&args[1])?;
-        match parse_shebang(&file) {
-            Ok(shebang) => {
-                //eprintln!("shebang: {}", shebang);
-                if !shebang.contains("caat_shell") {
-                    let mut command = std::process::Command::new(shebang);
-                    command.arg(&args[1]);
-                    let status = command.status()?;
-                    if !status.success() {
-                        eprintln!("error: failed to execute shebang");
-                        std::process::exit(1);
-                    }
-                    //eprintln!("status: {:?}", status);
-                    return Ok(());
-                } else {
-                    //eprintln!("shebang contains caat_shell");
-                }
-            }
-            Err(e) => {
-                eprintln!("error: {}", e);
-            }
-        }
-
-        //eprintln!("file: {}", file);
-        let mut file = parser::parse_file(&file)?;
-        //eprintln!("file: {:#?}", file);
+        let mut file = parse_file(&args[1])?;
         eval::run_file(shell, &mut file);
     } else {
         eval::repl(shell);
     }
     Ok(())
 }
+
+fn parse_file(file_path: &str) -> Result<File, Box<dyn std::error::Error>> {
+    let file = std::fs::read_to_string(file_path)?;
+    match parse_shebang(&file) {
+        Ok(shebang) => {
+            //eprintln!("shebang: {}", shebang);
+            if !shebang.contains("caat_shell") {
+                let mut command = std::process::Command::new(shebang);
+                command.arg(file_path);
+                let status = command.status()?;
+                if !status.success() {
+                    eprintln!("error: failed to execute shebang");
+                    std::process::exit(1);
+                }
+                //eprintln!("status: {:?}", status);
+                std::process::exit(0);
+            } else {
+                let file = parser::parse_file(&file)?;
+                return Ok(file);
+            }
+        }
+        Err(e) => {
+            eprintln!("error: {}", e);
+        }
+    }
+
+    //eprintln!("file: {}", file);
+    let file = parser::parse_file(&file)?;
+    Ok(file)
+}
+

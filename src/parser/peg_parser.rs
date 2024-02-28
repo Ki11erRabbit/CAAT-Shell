@@ -33,7 +33,7 @@ pub enum Token {
 peg::parser!{
     grammar parser() for str {
         pub rule identifier() -> Token
-            = match_str:$(['a'..='z'|'A'..='Z'|'_']['a'..='z'|'A'..='Z'|'_'|'0'..='9']*) {?
+            /*= match_str:$(['a'..='z'|'A'..='Z'|'_']['a'..='z'|'A'..='Z'|'_'|'0'..='9']*) {?
                 match match_str {
                     "true" => Err("boolean not identifier"),
                     "false" => Err("boolean not identifier"),
@@ -48,6 +48,39 @@ peg::parser!{
                     "match" => Err("match not identifier"),
                     "with" => Err("with not identifier"),
                     _ => Ok(Token::Identifier(match_str.to_string())),
+                }
+            }*/
+            = match_str:$([^ ' '|','|'\n'|'\r'|'\t'|'('|')'|'['|']'|'"'|'{'|'}'|'$'|'\''|'#'|'!']+) {?
+                match match_str {
+                    "true" => Err("boolean not identifier"),
+                    "false" => Err("boolean not identifier"),
+                    "if" => Err("if not identifier"),
+                    "then" => Err("then not identifier"),
+                    "else" => Err("else not identifier"),
+                    //"access" => Err("access not identifier"),
+                    //"at" => Err("at not identifier"),
+                    "function" => Err("function not identifier"),
+                    "return" => Err("return not identifier"),
+                    "fn" => Err("fn not identifier"),
+                    "match" => Err("match not identifier"),
+                    "with" => Err("with not identifier"),
+                    "++" => Err("++ not identifier"),
+                    "<" => Err("< not identifier"),
+                    ">" => Err("> not identifier"),
+                    ">>" => Err(">> not identifier"),
+                    "|" => Err("| not identifier"),
+                    ";" => Err("; not identifier"),
+                    "&&" => Err("&& not identifier"),
+                    "||" => Err("|| not identifier"),
+                    "=>" => Err("=> not identifier"),
+                    x => {
+                        if x.parse::<f64>().is_ok() {
+                            Err("number not identifier")
+                        } else {
+                            Ok(Token::Identifier(x.to_string()))
+                        }
+                    },
+                    //_ => Ok(Token::Identifier(match_str.to_string())),
                 }
             }
         pub rule bool() -> Token

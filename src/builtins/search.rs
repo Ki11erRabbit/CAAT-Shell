@@ -12,7 +12,9 @@ pub fn find(args: &Vec<Value>) -> Result<Value,String> {
     for arg in args {
         match arg {
             Value::String(s) => command.arg(s),
-            _ => return Err("find: expected string arguments".to_string()),
+            _ => {
+                return Err("find: expected string arguments".to_string());
+            }
         };
     }
     let output = command.output().map_err(|e| format!("find: {}", e))?;
