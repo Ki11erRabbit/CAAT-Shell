@@ -1,5 +1,6 @@
 use caat_rust::Value;
 use crate::shell::Shell;
+use std::sync::{Arc, RwLock};
 
 mod echo;
 mod cd;
@@ -8,11 +9,13 @@ mod background;
 mod list_utils;
 mod search;
 mod numbers;
+mod strings;
 
 
 
-pub fn run_builtin(shell: Option<&mut Shell>, command_name: &str, args: &Vec<Value>) -> Result<Value,Result<(),String>> {
+pub fn run_builtin(shell: Option<Arc<RwLock<Shell>>>, command_name: &str, args: &Vec<Value>) -> Result<Value,Result<(),String>> {
     let output = match command_name {
+        "trace" => echo::trace(args),
         "echo" => echo::echo(args), 
         "cd" => cd::cd(args).map_err(|msg| Err(msg))?,
         "ls" => ls::ls(args).map_err(|msg| Err(msg))?,
@@ -33,6 +36,8 @@ pub fn run_builtin(shell: Option<&mut Shell>, command_name: &str, args: &Vec<Val
         "sub" => numbers::sub(args).map_err(|msg| Err(msg))?,
         "mul" => numbers::mult(args).map_err(|msg| Err(msg))?,
         "div" => numbers::div(args).map_err(|msg| Err(msg))?,
+        "contains" => strings::contains(args).map_err(|msg| Err(msg))?,
+        "split" => strings::split(args).map_err(|msg| Err(msg))?,
         _ => return Err(Ok(())),
     };
     return Ok(output);

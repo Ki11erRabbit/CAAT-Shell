@@ -1,8 +1,9 @@
-use crate::{parser::{Expression, File, PipelinePart, Redirect, Statement}, shell::Shell};
+use crate::{parser::{Expression, File, PipelinePart, Redirect, Statement, MatchArm}, shell::Shell};
+use crate::{borrow_mut, borrow};
 use std::io::Write;
-use caat_rust::{Caat, ForeignFunction, Value};
+use caat_rust::{Caat, Value};
 use regex::Regex;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use rustyline::{self,Editor, history, config, error::ReadlineError};
 
 
@@ -19,7 +20,7 @@ fn create_rustyline() -> Editor<(),history::DefaultHistory> {
 
 
 
-pub fn repl(shell: &mut Shell) {
+pub fn repl(shell: Arc<RwLock<Shell>>) {
     let mut readline = create_rustyline();
     loop {
         match readline.readline("> ") {
@@ -40,7 +41,7 @@ pub fn repl(shell: &mut Shell) {
                     }
                 };
                 //eprintln!("{:?}", interactive);
-                match eval(shell, &mut interactive) {
+                match eval(shell.clone(), &mut interactive) {
                     Ok((true, value)) => {
                         println!("{}", format_value(&value));
                     }
@@ -61,9 +62,9 @@ pub fn repl(shell: &mut Shell) {
 }
 
 
-pub fn run_file(shell: &mut Shell, file: &mut File) -> Value {
+pub fn run_file(shell: Arc<RwLock<Shell>>, file: &mut File) -> Value {
     loop {
-        match eval(shell, file) {
+        match eval(shell.clone(), file) {
             Ok((true, _)) => {
                 //TODO: add code that enables and disables this
                 //println!("{}", format_value(&value));
@@ -81,13 +82,14 @@ pub fn run_file(shell: &mut Shell, file: &mut File) -> Value {
 
 
 
-fn eval(shell: &mut Shell, input: &mut dyn Iterator<Item = Statement>) -> Result<(bool, Value), String> {
+fn eval(shell: Arc<RwLock<Shell>>, input: &mut dyn Iterator<Item = Statement>) -> Result<(bool, Value), String> {
     let next = input.next();
     match next {
         Some(Statement::Assignment(assignment)) => {
-            let value = eval_expression(shell, assignment.value)?;
+            let value = eval_expression(shell.clone(), assignment.value)?;
             //eprintln!("Assignment: {:?} = {:?}", assignment.target, value);
-            let env = shell.environment_mut();
+            let mut borrowed_shell = borrow_mut!(shell);
+            let env = borrowed_shell.environment_mut();
             env.set(assignment.target, value);
         }
         Some(Statement::Expression(expression)) => {
@@ -97,8 +99,9 @@ fn eval(shell: &mut Shell, input: &mut dyn Iterator<Item = Statement>) -> Result
         }
         Some(Statement::FunctionDef(function)) => {
             let name = function.name.clone();
-            let function = crate::shell::function::Function::new(&function.name, function.args, function.body);
-            shell.set_function(name, function);
+            let function = crate::shell::function::Function::new(&function.name, function.args, function.body, shell.clone());
+            let mut borrowed_shell = borrow_mut!(shell);
+            borrowed_shell.set_function(name, function);
         }
         Some(Statement::Return(expression)) => {
             let value = eval_expression(shell, expression)?;
@@ -116,14 +119,14 @@ fn eval(shell: &mut Shell, input: &mut dyn Iterator<Item = Statement>) -> Result
 
 
 
-fn eval_expression(shell: &mut Shell, expression: Expression) -> Result<Value,String> {
+fn eval_expression(shell: Arc<RwLock<Shell>>, expression: Expression) -> Result<Value,String> {
     match expression {
         Expression::Literal(literal) => {
             Ok(literal.as_value())
         }
         Expression::Pipeline(pipeline) => {
             //println!("Pipeline: {:?}", pipeline);
-            let result = eval_pipeline(shell, &pipeline.pipeline, None)?;
+            let result = eval_pipeline(shell.clone(), &pipeline.pipeline, None)?;
             if let Some(redirect) = pipeline.redirect {
                 match redirect {
                     Redirect::Input(_) => unimplemented!(),
@@ -155,31 +158,32 @@ fn eval_expression(shell: &mut Shell, expression: Expression) -> Result<Value,St
             Ok(result)
         }
         Expression::Variable(variable) => {
-            match shell.get_function(&variable) {
+            let borrowed_shell = borrow!(shell);
+            match borrowed_shell.get_function(&variable) {
                 Some(function) => {
                     return Ok(Value::CAATFunction(Arc::new(function)));
                 }
                 None => {}
             }
-            let env = shell.environment();
+            let env = borrowed_shell.environment();
             Ok(env.get(&variable).ok_or(format!("{} not found in environment", variable))?.clone())
         }
         Expression::Parenthesized(expression) => {
             eval_expression(shell, *expression)
         }
         Expression::HigherOrder(mut hocmd) => {
-            hocmd.resolve_args(shell);
+            hocmd.resolve_args(shell.clone());
             Ok(Value::CAATFunction(Arc::new(hocmd.pipeline)))
         }
         Expression::If(cond, then, else_) => {
-            match eval_expression(shell, *cond)? {
-                Value::Boolean(true) => eval_expression(shell, *then),
+            match eval_expression(shell.clone(), *cond)? {
+                Value::Boolean(true) => eval_expression(shell.clone(), *then),
                 Value::Boolean(false) => eval_expression(shell, *else_),
                 _ => Err("if: type error boolean not found".to_string()),
             }
         }
         Expression::Access(thing, index) => {
-            let thing = eval_expression(shell, *thing)?;
+            let thing = eval_expression(shell.clone(), *thing)?;
             let index = eval_expression(shell, *index)?;
             match thing {
                 Value::List(list) => {
@@ -202,7 +206,7 @@ fn eval_expression(shell: &mut Shell, expression: Expression) -> Result<Value,St
             }
         },
         Expression::Concat(a, b) => {
-            let a = eval_expression(shell, *a)?;
+            let a = eval_expression(shell.clone(), *a)?;
             let b = eval_expression(shell, *b)?;
             match (a, b) {
                 (Value::List(a), Value::List(b)) => {
@@ -218,21 +222,51 @@ fn eval_expression(shell: &mut Shell, expression: Expression) -> Result<Value,St
             }
         },
         Expression::Lambda(args, body) => {
-            let mut lambda = crate::shell::function::Function::new("lambda", args, body);
-            lambda.attach_shell(shell.clone());
+            let mut lambda = crate::shell::function::Function::new("lambda", args, body, shell.clone());
+            let borrowed_shell = borrow!(shell);
+            let env = borrowed_shell.environment();
+            lambda.bind_environment(env.get_current());
             return Ok(Value::CAATFunction(Arc::new(lambda)));
+        },
+        Expression::Match(expr, arms) => {
+            let expr = eval_expression(shell.clone(), *expr)?;
+            for arm in arms {
+                match arm {
+                    MatchArm::WildcardBind(var, body) => {
+                        let mut borrowed_shell = borrow_mut!(shell);
+                        let env = borrowed_shell.environment_mut();
+                        env.set(var.clone(), expr.clone());
+                        drop(borrowed_shell);
+                        let result = eval_expression(shell.clone(), body);
+                        let mut borrowed_shell = borrow_mut!(shell);
+                        let env = borrowed_shell.environment_mut();
+                        env.remove(&var);
+                        return result;
+                    },
+                    MatchArm::WildcardDiscard(body) => {
+                        return eval_expression(shell, body);
+                    },
+                    MatchArm::Expression(pattern, body) => {
+                        let pattern = eval_expression(shell.clone(), pattern)?;
+                        if pattern == expr {
+                            return eval_expression(shell, body);
+                        }
+                    },
+                }
+            }
+            return Err("match: no match".to_string());
         }
 
     }
 }
 
-fn eval_pipeline(shell: &mut Shell, pipeline: &PipelinePart, arg: Option<Value>) -> Result<Value, String> {
+fn eval_pipeline(shell: Arc<RwLock<Shell>>, pipeline: &PipelinePart, arg: Option<Value>) -> Result<Value, String> {
 
 
 
     let command = &pipeline.command;
     let name = &command.name;
-    let args: Vec<Value> = command.arguments_as_value(shell.environment());
+    let args: Vec<Value> = command.arguments_as_value(shell.clone());
     let args = match arg {
         Some(arg) => {
             let mut args = args;
@@ -242,16 +276,20 @@ fn eval_pipeline(shell: &mut Shell, pipeline: &PipelinePart, arg: Option<Value>)
         None => args,
     };
 
-    let value = if let Some(function) = shell.get_function(name) {
+    let borrowed_shell = borrow_mut!(shell);
+    let value = if let Some(function) = borrowed_shell.get_function(name) {
+        drop(borrowed_shell);
         match function.call(&args) {
             Value::Failure(msg) => Err(msg),
             value => Ok(value),
         }
     } else {
-        let value = match crate::builtins::run_builtin(Some(shell), name.as_str(), &args) {
+        drop(borrowed_shell);
+        let value = match crate::builtins::run_builtin(Some(shell.clone()), name.as_str(), &args) {
             Ok(value) => Ok(value),
             Err(Ok(())) => {
-                match shell.environment().get(name) {
+                let borrowed_shell = borrow!(shell);
+                match borrowed_shell.environment().get(name) {
                     Some(Value::CAATFunction(f)) => {
                         let value = f.call(&args);
                         match value {
@@ -262,7 +300,8 @@ fn eval_pipeline(shell: &mut Shell, pipeline: &PipelinePart, arg: Option<Value>)
                     _ => {
                         let ff = caat_rust::ForeignFunction::new(&command.name);
                         //println!("{:?}", command.arguments_as_value(shell.environment()));
-                        let return_value = match ff.call(&command.arguments_as_value(shell.environment())) {
+                        drop(borrowed_shell);
+                        let return_value = match ff.call(&command.arguments_as_value(shell.clone())) {
                             Value::Failure(msg) => return Err(msg),
                             value => value,
                         };

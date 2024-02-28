@@ -1,13 +1,15 @@
 use parser::parse_shebang;
 use shell::Shell;
+use std::sync::{Arc, RwLock};
 
 pub mod parser;
 pub mod eval;
+#[macro_use]
 pub mod shell;
 pub mod builtins;
 
 fn main() -> Result<(), Box<dyn std::error::Error>>  {
-    let mut shell = Shell::new();
+    let shell = Arc::new(RwLock::new(Shell::new()));
     let args: Vec<String> = std::env::args().collect();
     //eprintln!("args: {:?}", args);
     //eprintln!("args.len(): {}", args.len());
@@ -39,9 +41,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>>  {
         //eprintln!("file: {}", file);
         let mut file = parser::parse_file(&file)?;
         //eprintln!("file: {:#?}", file);
-        eval::run_file(&mut shell, &mut file);
+        eval::run_file(shell, &mut file);
     } else {
-        eval::repl(&mut shell);
+        eval::repl(shell);
     }
     Ok(())
 }

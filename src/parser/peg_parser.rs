@@ -1,5 +1,5 @@
 
-use crate::parser::{Literal, Expression, Command, Pipeline, Operator, Statement, Assignment, Interactive, File, FunctionDef, Redirect, PipelinePart};
+use crate::parser::{Literal, Expression, Command, Pipeline, Operator, Statement, Assignment, Interactive, File, FunctionDef, Redirect, PipelinePart, MatchArm};
 
 #[derive(Debug, PartialEq)]
 pub enum Token {
@@ -45,6 +45,8 @@ peg::parser!{
                     "function" => Err("function not identifier"),
                     "return" => Err("return not identifier"),
                     "fn" => Err("fn not identifier"),
+                    "match" => Err("match not identifier"),
+                    "with" => Err("with not identifier"),
                     _ => Ok(Token::Identifier(match_str.to_string())),
                 }
             }
@@ -56,6 +58,26 @@ peg::parser!{
             = match_str:$(['-']?['0'..='9']+) {Token::Integer(match_str.parse().unwrap())}
         pub rule string() -> Token
             = ['"'] s:$([^ '"']+) ['"'] {Token::String(s.to_string())}
+            / ['\''] s:$([^ '\'']+) ['\''] {Token::String(s.to_string())}
+            /*/ s:$([^ ' ']+) {?
+                match s {
+                    "true" => Err("true not string"),
+                    "false" => Err("false not string"),
+                    "if" => Err("if not string"),
+                    "then" => Err("then not string"),
+                    "else" => Err("else not string"),
+                    "function" => Err("function not string"),
+                    "return" => Err("return not string"),
+                    "fn" => Err("fn not string"),
+                    x => {
+                        if x.parse::<f64>().is_ok() {
+                            Err("number not string")
+                        } else {
+                            Ok(Token::String(x.to_string()))
+                        }
+                    },
+                }
+            }*/
         pub rule pipe() -> Token
             = quiet!{"|"} {Token::Pipe}
         rule and() -> Token
@@ -133,6 +155,25 @@ peg::parser!{
             = "if" [' '|'\t'|'\n']* cond:expression() [' '|'\t'|'\n']* "then" [' '|'\t'|'\n']* then:expression() [' '|'\t'|'\n']* "else" [' '|'\t'|'\n']* else_:expression() {
             Expression::If(Box::new(cond), Box::new(then), Box::new(else_))
             }
+        rule match_expression() -> Expression 
+            = "match" [' '|'\t'|'\n']* e:expression() [' '|'\t'|'\n']* "with" [' '|'\t'|'\n']* m:match_arm() ** ( ['\r'|'\n']*) {
+                Expression::Match(Box::new(e), m)
+            }
+        rule match_arm() -> MatchArm 
+            = [' '|'\t']* e:literal_expression() [' '|'\t']* "=>" [' '|'\t']* b:expression() {
+                MatchArm::Expression(e, b)
+            }
+            / [' '|'\t']* "_" [' '|'\t']* "=>" [' '|'\t']* b:expression() {
+                MatchArm::WildcardDiscard(b)
+            }
+            / [' '|'\t']* id:identifier() [' '|'\t']* "=>" [' '|'\t']* b:expression() {
+                if let Token::Identifier(s) = id {
+                    MatchArm::WildcardBind(s, b)
+                } else {
+                    unreachable!()
+                }
+            }
+                    
         #[cache_left_rec]
         rule access_expression() -> Expression 
             = thing:(expression_nonterminals_right() / expression_terminals() / concat_expression() /access_expression()) [' '|'\t']* bracket_open() [' '|'\t']* index:expression() [' '|'\t']* bracket_close() {
@@ -152,7 +193,7 @@ peg::parser!{
         rule expression_nonterminals_right() -> Expression
             = e:(if_expression() / paren_expression() / expression_terminals()) {e}
         rule expression_nonterminals() -> Expression
-            = e:(if_expression() / access_expression() / concat_expression() / paren_expression() / expression_terminals()) {e}
+            = e:(if_expression() / access_expression() / concat_expression() / paren_expression() / expression_terminals() / match_expression()) {e}
         pub rule expression() -> Expression
             = e:(expression_nonterminals() / expression_terminals()) {e}
         pub rule command() -> Command

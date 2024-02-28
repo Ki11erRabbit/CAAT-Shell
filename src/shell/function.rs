@@ -1,6 +1,9 @@
 use caat_rust::{Caat, Value};
-use std::cell::RefCell;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 use crate::parser::File;
+use crate::borrow_mut;
+use crate::shell::Environment;
 
 use super::Shell;
 
@@ -13,34 +16,27 @@ pub struct Function {
     pub name: String,
     pub arguments: Vec<String>,
     pub body: File,
-    pub shell: RefCell<Option<Shell>>,
+    pub shell: Arc<RwLock<Shell>>,
+    pub environment: Option<HashMap<String, Value>>,
 }
 
 impl Function {
-    pub fn new(name: &str, arguments: Vec<String>, body: File) -> Self {
+    pub fn new(name: &str, arguments: Vec<String>, body: File, shell: Arc<RwLock<Shell>>) -> Self {
         Function {
             name: name.to_string(),
             arguments,
-            body: body,
-            shell: RefCell::new(None),
+            body,
+            shell,
+            environment: None,
         }
     }
-    
-    pub fn attach_shell(&mut self, shell: Shell) {
-        let mut current = self.shell.borrow_mut();
-        match *current {
-            Some(ref mut current) => {
-                current.merge(shell);
-            }
-            None => {
-                *current = Some(shell);
-
-            }
-        }
+    pub fn bind_environment(&mut self, environment: HashMap<String, Value>) {
+        self.environment = Some(environment);
     }
 }
 
-unsafe impl Sync for Function {}
+
+
 
 impl std::fmt::Display for Function {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -50,19 +46,26 @@ impl std::fmt::Display for Function {
 
 impl Caat for Function {
     fn call(&self, args: &[Value]) -> Value {
-        if let Some(mut shell) = self.shell.take() {
-            let environment = shell.environment_mut();
-            for (i, arg) in self.arguments.iter().enumerate() {
-                if let Some(value) = args.get(i) {
-                    environment.set(arg.clone(), value.clone());
-                }
+        let mut borrowed_shell = borrow_mut!(self.shell);
+        let environment = borrowed_shell.environment_mut();
+        environment.push_scope();
+        match &self.environment {
+            Some(env) => {
+                environment.extend_current(env);
             }
-            let value = crate::eval::run_file(&mut shell, &mut self.body.clone());
-             
-            *self.shell.borrow_mut() = Some(shell);
-            value
-        } else {
-            return Value::Failure("Shell not found".to_string());
+            None => {}
         }
+        for (i, arg) in self.arguments.iter().enumerate() {
+            if let Some(value) = args.get(i) {
+                environment.set(arg.clone(), value.clone());
+            }
+        }
+        drop(borrowed_shell);
+        let value = crate::eval::run_file(self.shell.clone(), &mut self.body.clone());
+         
+        let mut borrowed_shell = borrow_mut!(self.shell);
+        let environment = borrowed_shell.environment_mut();
+        environment.pop_scope();
+        value
     }
 }

@@ -6,10 +6,10 @@ mod peg_parser;
 use caat_rust::{Caat, Value};
 pub use peg_parser::{parse_file, parse_interactive, parse_shebang};
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use crate::shell::function::Function;
-
-use crate::shell::{Environment, Shell};
+use crate::{borrow, borrow_mut};
+use crate::shell::Shell;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct File {
@@ -119,35 +119,44 @@ pub enum Expression {
     Access(Box<Expression>, Box<Expression>),
     Concat(Box<Expression>, Box<Expression>),
     Lambda(Vec<String>, File),
+    Match(Box<Expression>, Vec<MatchArm>),
 }
 
 impl Expression {
-    pub fn as_value(&self, env: &Environment) -> Value {
+    pub fn as_value(&self, shell: Arc<RwLock<Shell>>) -> Value {
+        let borrowed_shell = borrow!(shell);
+        let env = borrowed_shell.environment();
         match self {
             Expression::Literal(literal) => literal.as_value(),
             Expression::Variable(string) => env.get(&string).map_or(Value::Failure(format!("{} not found in environment", string)), |v| v.clone()),
             Expression::Pipeline(pipeline) => pipeline.pipeline.call(&[]),
-            Expression::Parenthesized(expression) => expression.as_value(env),
+            Expression::Parenthesized(expression) => {
+                drop(borrowed_shell);
+                expression.as_value(shell)
+            },
             Expression::HigherOrder(ho) => {
+                drop(borrowed_shell);
                 let mut ho = ho.clone();
-                ho.resolve_args_env(env);
+                ho.resolve_args(shell.clone());
                 Value::CAATFunction(Arc::new(ho.pipeline))
             },
             Expression::If(cond, then, else_) => {
-                let cond = cond.as_value(env);
+                drop(borrowed_shell);
+                let cond = cond.as_value(shell.clone());
                 if let Value::Boolean(b) = cond {
                     if b {
-                        then.as_value(env)
+                        then.as_value(shell)
                     } else {
-                        else_.as_value(env)
+                        else_.as_value(shell)
                     }
                 } else {
                     Value::Failure(String::from("if: type error, expected boolean"))
                 }
             },
             Expression::Access(thing, index) => {
-                let thing = thing.as_value(env);
-                let index = index.as_value(env);
+                drop(borrowed_shell);
+                let thing = thing.as_value(shell.clone());
+                let index = index.as_value(shell.clone());
                 match thing {
                     Value::List(list) => {
                         if let Value::Integer(i) = index {
@@ -174,8 +183,9 @@ impl Expression {
                 }
             },
             Expression::Concat(a, b) => {
-                let a = a.as_value(env);
-                let b = b.as_value(env);
+                drop(borrowed_shell);
+                let a = a.as_value(shell.clone());
+                let b = b.as_value(shell.clone());
                 match (a, b) {
                     (Value::List(a), Value::List(b)) => {
                         let mut a = a.to_vec();
@@ -190,11 +200,42 @@ impl Expression {
                 }
             }
             Expression::Lambda(args, body) => {
-                let mut lambda = Function::new("lambda", args.to_vec(), body.clone());
-                lambda.attach_shell(Shell::with_environment(env.clone()));
+                let mut lambda = Function::new("lambda", args.to_vec(), body.clone(), shell.clone());
+                let env = env.get_current();
+                lambda.bind_environment(env);
                 return Value::CAATFunction(Arc::new(lambda));
             }
+            Expression::Match(expr, arms) => {
+                drop(borrowed_shell);
+                let expr = expr.as_value(shell.clone());
+                for arm in arms {
+                    match arm {
+                        MatchArm::WildcardBind(var, body) => {
+                            let mut borrowed_shell = borrow_mut!(shell);
+                            let env = borrowed_shell.environment_mut();
+                            env.push_scope();
+                            env.set(var.clone(), expr.clone());
+                            drop(borrowed_shell);
+                            let result = body.as_value(shell.clone());
+                            let mut borrowed_shell = borrow_mut!(shell);
+                            let env = borrowed_shell.environment_mut();
+                            env.pop_scope();
+                            return result;
+                        },
+                        MatchArm::WildcardDiscard(body) => {
+                            return body.as_value(shell.clone());
+                        },
+                        MatchArm::Expression(pattern, body) => {
+                            let pattern = pattern.as_value(shell.clone());
+                            if pattern == expr {
+                                return body.as_value(shell.clone());
+                            }
+                        },
+                    }
+                }
+                return Value::Failure(String::from("No match"));
                     
+            }
         }
     }
 }
@@ -214,7 +255,31 @@ impl fmt::Display for Expression {
                 write!(f, "fn ({})", args.join(", "))?;
                 write!(f, "{{ {} }}", body)
             }
+            Expression::Match(expr, arms) => {
+                let out = write!(f, "match {} with", expr);
+                for arm in arms {
+                    write!(f, "{}", arm)?;
+                }
+                out
+            }
                     
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum MatchArm {
+    Expression(Expression, Expression),
+    WildcardBind(String, Expression),
+    WildcardDiscard(Expression),
+}
+
+impl fmt::Display for MatchArm {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            MatchArm::Expression(e, b) => write!(f, "{} => {}", e, b),
+            MatchArm::WildcardBind(s, e) => write!(f, "{} => {}", s, e),
+            MatchArm::WildcardDiscard(e) => write!(f, "_ => {}", e),
         }
     }
 }
@@ -286,11 +351,8 @@ pub struct Pipeline {
 }
 
 impl Pipeline {
-    pub fn resolve_args(&mut self, shell: &Shell) {
+    pub fn resolve_args(&mut self, shell: Arc<RwLock<Shell>>) {
         self.pipeline.resolve_args(shell);
-    }
-    pub fn resolve_args_env(&mut self, env: &Environment) {
-        self.pipeline.resolve_args_env(env);
     }
 }
 
@@ -337,16 +399,10 @@ impl PipelinePart {
         }
     }
 
-    pub fn resolve_args(&mut self, shell: &Shell) {
-        self.command.resolve_args(shell);
+    pub fn resolve_args(&mut self, shell: Arc<RwLock<Shell>>) {
+        self.command.resolve_args(shell.clone());
         if let Some(next) = &mut self.next {
             next.resolve_args(shell);
-        }
-    }
-    pub fn resolve_args_env(&mut self, env: &Environment) {
-        self.command.resolve_args_env(env);
-        if let Some(next) = &mut self.next {
-            next.resolve_args_env(env);
         }
     }
 }
@@ -427,17 +483,12 @@ impl Command {
             args: Vec::new(),
         }
     }
-    pub fn arguments_as_value(&self, env: &Environment) -> Vec<Value> {
-        self.arguments.iter().map(|arg| arg.as_value(env)).collect()
+    pub fn arguments_as_value(&self, shell: Arc<RwLock<Shell>>) -> Vec<Value> {
+        self.arguments.iter().map(|arg| arg.as_value(shell.clone())).collect()
     }
     
-    pub fn resolve_args(&mut self, shell: &Shell) {
-        let env = shell.environment();
-        self.args = self.arguments_as_value(env);
-    }
-
-    pub fn resolve_args_env(&mut self, env: &Environment) {
-        self.args = self.arguments_as_value(env);
+    pub fn resolve_args(&mut self, shell: Arc<RwLock<Shell>>) {
+        self.args = self.arguments_as_value(shell);
     }
 }
 

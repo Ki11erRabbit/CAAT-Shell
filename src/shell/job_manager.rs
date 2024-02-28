@@ -20,7 +20,7 @@ impl Clone for Job {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct JobManager {
     jobs: Vec<Option<Job>>,
     next_id: Option<i64>,
@@ -35,25 +35,23 @@ impl JobManager {
         }
     }
     fn get_next_id(&mut self) {
+        let mut next_id = None;
         for (i , job) in self.jobs.iter().enumerate() {
             if job.is_none() {
-                self.next_id = Some(i as i64);
+                next_id = Some(i as i64);
                 break;
             }
+        }
+        if next_id.is_none() {
+            self.next_id = Some(self.jobs.len() as i64);
+        } else {
+            self.next_id = next_id;
         }
     }
 
     pub fn spawn_command(&mut self, command: Value, args: &Vec<Value>) -> Result<Value, String> {
-        let id = match self.next_id {
-            Some(id) => id,
-            None => {
-                self.get_next_id();
-                match self.next_id {
-                    Some(id) => id,
-                    None => return Err("background: no id was found".to_string()),
-                }
-            },
-        };
+        self.get_next_id();
+        let id = self.next_id.expect("No next id Somehow");
         let cmd = match command {
             Value::CAATFunction(f) => f,
             _ => return Err("background: no command was given".to_string()),
@@ -63,16 +61,18 @@ impl JobManager {
         let handle = std::thread::spawn(move || {
             cmd.call(&args)
         });
-        self.jobs.push(Some(Job {
+        if id as usize >= self.jobs.len() {
+            self.jobs.push(None);
+        }
+        self.jobs[id as usize] = Some(Job {
             command: command.clone(),
             id,
             handle: Arc::new(Mutex::new(Some(handle))),
-        }));
-        self.next_id = Some(id + 1);
+        });
         let mut output = HashMap::new();
         output.insert(String::from("id"), Value::Integer(id));
         output.insert(String::from("Command"), Value::String(command));
-        Ok(Value::Map(output, None))
+        Ok(Value::Map(output, Some(String::from("{id} {Command}"))))
     }
 
     pub fn join(&mut self, job: Value) -> Result<Value, String> {
@@ -145,4 +145,12 @@ impl JobManager {
     }
 }
 
+impl Clone for JobManager {
+    fn clone(&self) -> Self {
+        JobManager {
+            jobs: self.jobs.clone(),
+            next_id: self.next_id,
+        }
+    }
+}
 

@@ -1,9 +1,36 @@
 use std::collections::HashMap;
 use caat_rust::Value;
 use job_manager::JobManager;
+use std::sync::{Arc, RwLock};
 
 pub mod job_manager;
 pub mod function;
+
+#[macro_export]
+macro_rules! borrow_mut {
+    ($e:expr) => {
+        loop {
+            match $e.try_write() {
+                Ok(e) => break e,
+                Err(std::sync::TryLockError::WouldBlock) => continue,
+                Err(e) => panic!("error: {:?}", e),
+            }
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! borrow {
+    ($e:expr) => {
+        loop {
+            match $e.try_read() {
+                Ok(e) => break e,
+                Err(std::sync::TryLockError::WouldBlock) => continue,
+                Err(e) => panic!("error: {:?}", e),
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Shell {
@@ -43,8 +70,7 @@ impl Shell {
     pub fn get_function(&self, name: &str) -> Option<function::Function> {
         match self.functions.get(name) {
             Some(function) => {
-                let mut function = function.clone();
-                function.attach_shell(self.clone());
+                let function = function.clone();
                 Some(function)
             }
             None => None,
@@ -98,11 +124,33 @@ impl Environment {
             self.global.insert(name, value);
         }
     }
+    pub fn remove(&mut self, name: &str) {
+        for scope in self.scoped.iter_mut().rev() {
+            if scope.remove(name).is_some() {
+                return;
+            }
+        }
+        self.global.remove(name);
+    }
     pub fn push_scope(&mut self) {
         self.scoped.push(HashMap::new());
     }
     pub fn pop_scope(&mut self) {
         self.scoped.pop();
+    }
+    pub fn get_current(&self) -> HashMap<String, Value> {
+        if let Some(scope) = self.scoped.last() {
+            scope.clone()
+        } else {
+            self.global.clone()
+        }
+    }
+    pub fn extend_current(&mut self, other: &HashMap<String, Value>) {
+        if let Some(scope) = self.scoped.last_mut() {
+            scope.extend(other.clone());
+        } else {
+            self.global.extend(other.clone());
+        }
     }
 }
 
