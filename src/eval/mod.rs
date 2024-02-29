@@ -280,6 +280,9 @@ fn eval_expression(shell: Arc<RwLock<Shell>>, expression: Expression) -> Result<
                 Value::List(list) => {
                     match index {
                         Value::Integer(i) => {
+                            if i < 0 || i as usize >= list.len() {
+                                return Ok(Value::Null);
+                            }
                             Ok(list[i as usize].clone())
                         }
                         _ => Err("List index must be an integer".to_string()),
@@ -288,7 +291,11 @@ fn eval_expression(shell: Arc<RwLock<Shell>>, expression: Expression) -> Result<
                 Value::Map(map, _) => {
                     match index {
                         Value::String(s) => {
-                            Ok(map.get(&s).unwrap().clone())
+                            if let Some(value) = map.get(&s) {
+                                return Ok(value.clone());
+                            } else {
+                                return Ok(Value::Null);
+                            }
                         }
                         _ => Err("Map index must be a string".to_string()),
                     }
