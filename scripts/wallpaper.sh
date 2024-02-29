@@ -1,11 +1,16 @@
 #!/home/ki11errabbit/.cargo/bin/caat_shell
 
 arguments = args
+
 proc = match $arguments[1] with 
     "start" => fn() {
+        current = 0
+        last = background {ls}
         loop {
-            wallpaper.sh
-            sleep 3
+            current = background {wallpaper.sh "none"}
+            sleep 300
+            join $last
+            last = $current
         }
         return 0
     }
