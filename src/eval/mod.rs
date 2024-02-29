@@ -42,10 +42,10 @@ pub fn repl(shell: Arc<RwLock<Shell>>) {
                 };
                 //eprintln!("{:?}", interactive);
                 match eval(shell.clone(), &mut interactive) {
-                    Ok((true, value)) => {
+                    Ok(EvalContext {should_return: false, value, ..}) => {
                         println!("{}", format_value(&value));
                     }
-                    Ok((false, value)) => {
+                    Ok(EvalContext {should_return: true, value, ..}) => {
                         println!("{}", format_value(&value));
                         break;
                     }
@@ -61,7 +61,7 @@ pub fn repl(shell: Arc<RwLock<Shell>>) {
     }
 }
 
-fn parse_file(shell: Arc<RwLock<Shell>>, file_path: &str) -> Result<Value, String> {
+/*fn parse_file(shell: Arc<RwLock<Shell>>, file_path: &str) -> Result<Value, String> {
     let file = std::fs::read_to_string(file_path).map_err(|e| e.to_string())?;
     match crate::parser::parse_shebang(&file) {
         Ok(shebang) => {
@@ -82,29 +82,68 @@ fn parse_file(shell: Arc<RwLock<Shell>>, file_path: &str) -> Result<Value, Strin
     let mut file = crate::parser::parse_file(&file).map_err(|e| e.to_string())?;
 
     Ok(run_file(shell, &mut file))
-}
+}*/
 
-pub fn run_file(shell: Arc<RwLock<Shell>>, file: &mut File) -> Value {
+pub fn run_file(shell: Arc<RwLock<Shell>>, file: &mut File) -> EvalContext {
     loop {
         match eval(shell.clone(), file) {
-            Ok((true, _)) => {
+            Ok(EvalContext {should_return: false, ..}) => {
                 //TODO: add code that enables and disables this
                 //println!("{}", format_value(&value));
             }
-            Ok((false, value)) => {
-                return value;
+            Ok(ctx) => {
+                return ctx;
             }
             Err(msg) => {
                 println!("{}", msg);
-                return Value::Failure(msg);
+                return EvalContext::new(Value::Failure(msg));
             }
         }
     }
 }
 
+pub struct EvalContext {
+    value: Value,
+    should_return: bool,
+    loop_state: LoopState,
+}
 
+impl EvalContext {
+    fn new(value: Value) -> Self {
+        EvalContext {
+            value,
+            should_return: false,
+            loop_state: LoopState::None,
+        }
+    }
+    
+    fn new_should_return(value: Value, should_return: bool) -> Self {
+        EvalContext {
+            value,
+            should_return,
+            loop_state: LoopState::None,
+        }
+    }
 
-fn eval(shell: Arc<RwLock<Shell>>, input: &mut dyn Iterator<Item = Statement>) -> Result<(bool, Value), String> {
+    fn new_loop_state(value: Value, loop_state: LoopState) -> Self {
+        EvalContext {
+            value,
+            should_return: false,
+            loop_state,
+        }
+    }
+    pub fn get_value(self) -> Value {
+        self.value
+    }
+}
+
+pub enum LoopState {
+    Continue,
+    Break,
+    None,
+}
+
+fn eval(shell: Arc<RwLock<Shell>>, input: &mut dyn Iterator<Item = Statement>) -> Result<EvalContext, String> {
     let next = input.next();
     match next {
         Some(Statement::Assignment(assignment)) => {
@@ -117,7 +156,7 @@ fn eval(shell: Arc<RwLock<Shell>>, input: &mut dyn Iterator<Item = Statement>) -
         Some(Statement::Expression(expression)) => {
             //println!("Expression: {:?}", expression);
             let value = eval_expression(shell, expression)?;
-            return Ok((true, value));
+            return Ok(EvalContext::new(value));
         }
         Some(Statement::FunctionDef(function)) => {
             let name = function.name.clone();
@@ -127,15 +166,45 @@ fn eval(shell: Arc<RwLock<Shell>>, input: &mut dyn Iterator<Item = Statement>) -
         }
         Some(Statement::Return(expression)) => {
             let value = eval_expression(shell, expression)?;
-            return Ok((false, value));
+            return Ok(EvalContext::new_should_return(value, true));
         }
         Some(Statement::Blank) => {}
         Some(Statement::Comment(_)) => {}
+        Some(Statement::Break) => {
+            return Ok(EvalContext::new_loop_state(Value::Null, LoopState::Break));
+        }
+        Some(Statement::Continue) => {
+            return Ok(EvalContext::new_loop_state(Value::Null, LoopState::Continue));
+        }
+        Some(Statement::Loop(body)) => {
+            let mut body = body.peekable();
+            let original = body.clone();
+            loop {
+                if let None = body.peek() {
+                    body = original.clone();
+                }
+                match eval(shell.clone(), &mut body) {
+                    Ok(EvalContext {loop_state: LoopState::Continue, ..}) => {
+                        continue;
+                    }
+                    Ok(EvalContext {loop_state: LoopState::Break, ..}) => {
+                        break;
+                    }
+                    Ok(EvalContext {should_return: false, loop_state: LoopState::None, ..}) => {}
+                    Ok(ctx) => {
+                        return Ok(ctx);
+                    }
+                    Err(msg) => {
+                        return Err(msg);
+                    }
+                }
+            }
+        }
         None => {
-            return Ok((false, Value::Null))
+            return Ok(EvalContext::new_should_return(Value::Null, true));
         }
     }
-    Ok((true, Value::Null))
+    Ok(EvalContext::new(Value::Null))
 }
 
 
@@ -313,6 +382,8 @@ fn eval_pipeline(shell: Arc<RwLock<Shell>>, pipeline: &PipelinePart, arg: Option
                 let borrowed_shell = borrow!(shell);
                 match borrowed_shell.environment().get(name) {
                     Some(Value::CAATFunction(f)) => {
+                        let f = f.clone();
+                        drop(borrowed_shell);
                         let value = f.call(&args);
                         match value {
                             Value::Failure(msg) => return Err(msg),
@@ -325,7 +396,6 @@ fn eval_pipeline(shell: Arc<RwLock<Shell>>, pipeline: &PipelinePart, arg: Option
                         drop(borrowed_shell);
                         let return_value = match ff.call(&command.arguments_as_value(shell.clone())) {
                             Value::Failure(msg) => {
-                                match 
                                 return Err(msg);
                             },
                             value => value,

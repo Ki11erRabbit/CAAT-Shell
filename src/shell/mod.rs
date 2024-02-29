@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 use caat_rust::Value;
 use job_manager::JobManager;
-use std::sync::{Arc, RwLock};
-
 pub mod job_manager;
 pub mod function;
 

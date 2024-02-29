@@ -7,7 +7,6 @@ tallpapers = $HOME ++ "/Pictures/Wallpapers/Tallpapers"
 function select_widepaper(label, display) {
     list = find $widepapers "-name" "*.png" "-or" "-name" "*.jpeg" "-or" "-name" "*.jpg" | shuf
     file = head $list
-    trace $file
     echo $label ++ ": " ++ $file >> $HOME ++ "/lockscreen.log"
     return $display ++ ":" ++ $file
 }

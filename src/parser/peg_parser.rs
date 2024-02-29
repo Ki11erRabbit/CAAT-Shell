@@ -73,6 +73,9 @@ peg::parser!{
                     "&&" => Err("&& not identifier"),
                     "||" => Err("|| not identifier"),
                     "=>" => Err("=> not identifier"),
+                    "loop" => Err("loop not identifier"),
+                    "break" => Err("break not identifier"),
+                    "continue" => Err("continue not identifier"),
                     x => {
                         if x.parse::<f64>().is_ok() {
                             Err("number not identifier")
@@ -293,8 +296,14 @@ peg::parser!{
             = ['#'] c:$([^ '\r'|'\n']+) {Statement::Comment(c.to_string())}
         rule blank() -> Statement
             = [' '|'\t']* ['\r']?['\n']+ {Statement::Blank}
+        rule break_statement() -> Statement
+            = "break" {Statement::Break}
+        rule continue_statement() -> Statement
+            = "continue" {Statement::Continue}
+        rule loop_statement() -> Statement
+            = "loop" [' '|'\t']* ['{'] [' '|'\t'|'\r'|'\n']* body:file() [' '|'\t']* ['}'] {Statement::Loop(body)}
         rule statement() -> Statement
-            = [' '|'\t']* s:(assignment_statement() / expression_statement() / function_def_statement() / return_statement() / comment() / blank()) {s}
+            = [' '|'\t']* s:(assignment_statement() / expression_statement() / function_def_statement() / return_statement() / comment() / blank() / break_statement() / continue_statement() / loop_statement()) {s}
         pub rule interactive() -> Interactive
             = s:statement() ![_]{Interactive { statement: Some(s) }}
         pub rule file() -> File

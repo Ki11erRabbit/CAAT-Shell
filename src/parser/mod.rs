@@ -67,6 +67,9 @@ pub enum Statement {
     Return(Expression),
     Comment(String),
     Blank,
+    Break,
+    Continue,
+    Loop(File),
 }
 
 impl fmt::Display for Statement {
@@ -78,6 +81,10 @@ impl fmt::Display for Statement {
             Statement::Return(e) => write!(f, "return {}", e),
             Statement::Comment(c) => write!(f, "# {}", c),
             Statement::Blank => write!(f, ""),
+            Statement::Break => write!(f, "break"),
+            Statement::Continue => write!(f, "continue"),
+            Statement::Loop(body) => write!(f, "loop {{{}}}", body),
+                    
         }
     }
 }

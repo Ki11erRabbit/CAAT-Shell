@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use crate::parser::File;
 use crate::borrow_mut;
-use crate::shell::Environment;
 
 use super::Shell;
 
@@ -66,6 +65,6 @@ impl Caat for Function {
         let mut borrowed_shell = borrow_mut!(self.shell);
         let environment = borrowed_shell.environment_mut();
         environment.pop_scope();
-        value
+        value.get_value()
     }
 }

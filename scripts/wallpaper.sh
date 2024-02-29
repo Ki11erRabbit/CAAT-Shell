@@ -1,6 +1,17 @@
 #!/home/ki11errabbit/.cargo/bin/caat_shell
 
+arguments = args
+proc = match $arguments[1] with 
+    "start" => fn() {
+        loop {
+            wallpaper.sh
+            sleep 3
+        }
+        return 0
+    }
+    _ => fn () {return 0}
 
+proc
 
 widepapers = $HOME ++ "/Pictures/Wallpapers/Widepapers"
 tallpapers = $HOME ++ "/Pictures/Wallpapers/Tallpapers"

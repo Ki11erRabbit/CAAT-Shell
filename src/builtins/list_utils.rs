@@ -167,4 +167,12 @@ pub fn rest(args: &Vec<Value>) -> Result<Value, String> {
     Ok(Value::List(output))
 }
 
+pub fn length(args: &Vec<Value>) -> Result<Value, String> {
+    let list = match args.get(0) {
+        Some(Value::List(list)) => list,
+        _ => return Err("length: expected list as first argument".to_string()),
+    };
+    Ok(Value::Integer(list.len() as i64))
+}
+
 
